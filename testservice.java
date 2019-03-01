@@ -1795,35 +1795,34 @@ public class CashBudgetService {
         //log.debug("cashbudgetWrapperDTO::"+cashbudgetWrapperDTO);
         //log.debug("cashInflowWrapperDTO::"+cashInflowWrapperDTO);
         //set cash inflow data id receivables and save it.
+        //here each record should save it as 1 0r 2 according to the received date and percent
+        //if data is there in received date and percent, then add second record with parId as the first records id
+        //first record will be with yellow and second record would be W - if receivable date <= received date and the percent are same or higher
+        //B - if its received date >= or receivable date or the received percent is less than receivable percent
+        //for the first receivables, create one Green record too.
         List<CashInflowReceivablesDTO> newList = new ArrayList<CashInflowReceivablesDTO>();
-        for(DayDTOWrapper dayDTOWrapper: cashbudgetWrapperDTO.getDayDTOWrappers()) {
-            if(cashInflowWrapperDTO.getCashInflowData().getEditId().equals(dayDTOWrapper.getEditId())) {
-                for (DayDTO dayDTO: dayDTOWrapper.getDayDtos()) {
-                    if(dayDTO.getCashInflowReceivables() != null){
-                        for (CashInflowReceivablesDTO cashInflowReceivablesDTO: dayDTO.getCashInflowReceivables()) {
-                            cashInflowReceivablesDTO.setCidId(cashInflowWrapperDTO.getCashInflowData().getId());
-                            cashInflowReceivablesDTO.setSalesDate(cashInflowWrapperDTO.getCashInflowData().getSalesDate());
-                            if(("W".equalsIgnoreCase(cashInflowReceivablesDTO.getColorCode()) ||
-                                ("R".equalsIgnoreCase(cashInflowReceivablesDTO.getColorCode()))) &&
-                                //if("R".equalsIgnoreCase(cashInflowReceivablesDTO.getColorCode()) &&
-                                cashInflowReceivablesDTO.getReceivablePercent() == null) {
-                                log.debug("************not adding entry.."+cashInflowReceivablesDTO);
-                            }
-                            else{
-                                log.debug("receivableDate::"+cashInflowReceivablesDTO.getReceivableDate());
-                                log.debug("salesDate::"+cashInflowReceivablesDTO.getSalesDate());
-                                newList.add(cashInflowReceivablesDTO);
-                                log.debug("************adding entry.."+cashInflowReceivablesDTO);
-                                // CashInflowReceivables cashInflowReceivables = cashInflowReceivablesMapper.toEntity(cashInflowReceivablesDTO);
-                                // always add a new one
-                                // cashInflowReceivables.setId(null);
-                                // customCashInflowReceivablesRepository.save(cashInflowReceivables);
-                                // save paidAmts if its yellow and range here
-                                // saveCashInflowReceivedAmts(cashInflowReceivablesDTO, cashInflowReceivables, cashInflowData);
-                                // cashInflowReceivablesDTO.setId(cashInflowReceivables.getId());
-                            }
-                        }
-                    }
+        if(cashInflowWrapperDTO.getCashInflowRbls() != null){
+            for (CashInflowReceivablesDTO cashInflowReceivablesDTO: cashInflowWrapperDTO.getCashInflowRbls()) {
+                cashInflowReceivablesDTO.setCidId(cashInflowWrapperDTO.getCashInflowData().getId());
+                cashInflowReceivablesDTO.setSalesDate(cashInflowWrapperDTO.getCashInflowData().getSalesDate());
+                if(("W".equalsIgnoreCase(cashInflowReceivablesDTO.getColorCode()) ||
+                    ("R".equalsIgnoreCase(cashInflowReceivablesDTO.getColorCode()))) &&
+                    //if("R".equalsIgnoreCase(cashInflowReceivablesDTO.getColorCode()) &&
+                    cashInflowReceivablesDTO.getReceivablePercent() == null) {
+                    log.debug("************not adding entry.."+cashInflowReceivablesDTO);
+                }
+                else{
+                    log.debug("receivableDate::"+cashInflowReceivablesDTO.getReceivableDate());
+                    log.debug("salesDate::"+cashInflowReceivablesDTO.getSalesDate());
+                    newList.add(cashInflowReceivablesDTO);
+                    log.debug("************adding entry.."+cashInflowReceivablesDTO);
+                    // CashInflowReceivables cashInflowReceivables = cashInflowReceivablesMapper.toEntity(cashInflowReceivablesDTO);
+                    // always add a new one
+                    // cashInflowReceivables.setId(null);
+                    // customCashInflowReceivablesRepository.save(cashInflowReceivables);
+                    // save paidAmts if its yellow and range here
+                    // saveCashInflowReceivedAmts(cashInflowReceivablesDTO, cashInflowReceivables, cashInflowData);
+                    // cashInflowReceivablesDTO.setId(cashInflowReceivables.getId());
                 }
             }
         }
