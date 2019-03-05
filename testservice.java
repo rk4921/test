@@ -1796,62 +1796,9 @@ public class CashBudgetService {
                                                      CashInflowData cashInflowData) {
         log.debug("cashInflowWrapperDTO::"+cashInflowWrapperDTO);
         log.debug("saved cashInflowData::"+cashInflowData);
-        //set cash inflow data id receivables and save it.
-        //here each record should save it as 1 0r 2 according to the received date and percent
-        //if data is there in received date and percent, then add second record with parId as the first records id
-        //first record will be with yellow and second record would be W - if receivable date <= received date and the percent are same or higher
-        //B - if its received date >= or receivable date or the received percent is less than receivable percent
-        //for the first receivables, create one Green record too.
-        List<CashInflowReceivables> cashInflowReceivablesList = new ArrayList<CashInflowReceivables>();
-        //first create a green record for the sales
-        CashInflowReceivables cashInflowReceivables1 = new CashInflowReceivables();
-        cashInflowReceivables1.setSalesDate(cashInflowData.getSalesDate());
-        //for green both sales date and receivable date are sales date - this is for showing date calendar
-        cashInflowReceivables1.setReceivableDate(cashInflowData.getSalesDate());
-        cashInflowReceivables1.setColorCode("G");
-        cashInflowReceivables1.setCid(cashInflowData);
-        customCashInflowReceivablesRepository.save(cashInflowReceivables1);
-        cashInflowReceivablesList.add(cashInflowReceivables1);
-        Double receivedAmount = 0.0;
-        if(cashInflowWrapperDTO.getCashInflowRbls() != null){
-            for (CashInflowReceivablesDTO cashInflowReceivablesDTO: cashInflowWrapperDTO.getCashInflowRbls()) {
-                receivedAmount = 0.0;
-                log.debug("cashinflowreceivablesdto..."+cashInflowReceivablesDTO);
-                cashInflowReceivablesDTO.setCidId(cashInflowWrapperDTO.getCashInflowData().getId());
-                cashInflowReceivablesDTO.setSalesDate(cashInflowData.getSalesDate());
-                cashInflowReceivablesDTO.setColorCode("Y");
-                cashInflowReceivablesDTO.setReceivableDate(cashInflowReceivablesDTO.getSalesDate().plusDays(new Long(cashInflowReceivablesDTO.getCreditPeriod())));
-                CashInflowReceivables cashInflowReceivables2 = cashInflowReceivablesMapper.toEntity(cashInflowReceivablesDTO);
-                customCashInflowReceivablesRepository.save(cashInflowReceivables2);
-                cashInflowReceivablesList.add(cashInflowReceivables2);
-                if(cashInflowReceivablesDTO.getReceivedDate() != null && cashInflowReceivablesDTO.getReceivedPercent() != null){
-                    if(cashInflowReceivablesDTO.getReceivedDate().compareTo(cashInflowReceivablesDTO.getReceivableDate()) <= 0){
-                        CashInflowReceivables cashInflowReceivables = new CashInflowReceivables();
-                        cashInflowReceivables.setPaidAmt(cashInflowReceivablesDTO.getReceivedAmt());
-                        cashInflowReceivables.setColorCode("W");
-                        cashInflowReceivables.setCid(cashInflowData);
-                        cashInflowReceivables.setParId(cashInflowReceivables2.getId()+"");
-                        cashInflowReceivables.setSalesDate(cashInflowData.getSalesDate());
-                        cashInflowReceivables.setReceivedAmt(cashInflowReceivables2.getReceivedAmt());
-                        cashInflowReceivables.setReceivedPercent(cashInflowReceivables2.getReceivedPercent());
-                        customCashInflowReceivablesRepository.save(cashInflowReceivables);
-                        cashInflowReceivablesList.add(cashInflowReceivables);
-                    }
-                    else {
-                        CashInflowReceivables cashInflowReceivables = new CashInflowReceivables();
-                        cashInflowReceivables.setColorCode("R");
-                        cashInflowReceivables.setPaidAmt(cashInflowReceivablesDTO.getReceivedAmt());
-                        cashInflowReceivables.setCid(cashInflowData);
-                        cashInflowReceivables.setParId(cashInflowReceivables2.getId()+"");
-                        cashInflowReceivables.setSalesDate(cashInflowData.getSalesDate());
-                        cashInflowReceivables.setReceivedAmt(cashInflowReceivables2.getReceivedAmt());
-                        cashInflowReceivables.setReceivedPercent(cashInflowReceivables2.getReceivedPercent());
-                        customCashInflowReceivablesRepository.save(cashInflowReceivables);
-                        cashInflowReceivablesList.add(cashInflowReceivables);
-                    }
-                }
-            }
-        }
+        //calculate the received amount for that yellow record and save or update receivables
+        calculateReceivedAmount(cashInflowWrapperDTO.getCashInflowRbls(), cashInflowData);
+
         log.debug("receivables entry....."+cashInflowReceivablesList);
         if(cashInflowReceivablesList.size() > 0) {
             List<CashInflowReceivablesDTO> cashInflowReceivablesDTOS = cashInflowReceivablesMapper.toDto(cashInflowReceivablesList);
@@ -1860,6 +1807,31 @@ public class CashBudgetService {
             if (!("R".equalsIgnoreCase(cashInflowData.getInflowType()))) {
                 saveCashInflowRange(cashInflowReceivablesDTOS, cashInflowData);
             }
+        }
+    }
+
+    private void calculateReceivedAmount(List<CashInflowReceivablesDTO> cashInflowRbls, CashInflowData cashInflowData) {
+        Double totalReceived = 0.0;
+        Double singleReceived = 0.0;
+        for (CashInflowReceivablesDTO cashInflowReceivablesDTO: cashInflowRbls) {
+            if("Y".equalsIgnoreCase(cashInflowReceivablesDTO.getColorCode())){
+                cashInflowReceivablesDTO.setReceivableAmt((cashInflowData.getSalesAmount() - cashInflowData.getSalesCashAmount()) * cashInflowReceivablesDTO.getReceivablePercent() / 100);
+                for (CashInflowReceivablesDTO cashInflowReceivablesDTO1: cashInflowRbls) {
+                    if(cashInflowReceivablesDTO1.getReceivedPercent() != null &&
+                        ("R".equalsIgnoreCase(cashInflowReceivablesDTO1.getColorCode()) || "W".equalsIgnoreCase(cashInflowReceivablesDTO1.getColorCode()))
+                        && cashInflowReceivablesDTO1.getParId().equals(cashInflowReceivablesDTO.getEditId())){
+                        singleReceived = cashInflowReceivablesDTO1.getReceivedPercent() * cashInflowReceivablesDTO.getReceivableAmt();
+                        cashInflowReceivablesDTO.setReceivableAmt(cashInflowReceivablesDTO.getReceivableAmt());
+                        cashInflowReceivablesDTO.setReceivedAmt(singleReceived);
+                        totalReceived = totalReceived + singleReceived;
+                    }
+                }
+                cashInflowReceivablesDTO.setReceivedAmt(totalReceived);
+            } else if ("G".equalsIgnoreCase(cashInflowReceivablesDTO.getColorCode())){
+                cashInflowReceivablesDTO.setReceivableAmt((cashInflowData.getSalesAmount() - cashInflowData.getSalesCashAmount()) * cashInflowReceivablesDTO.getReceivablePercent() / 100);
+                cashInflowReceivablesDTO.setSalesAmt(cashInflowData.getSalesAmount());
+            }
+            cashInflowReceivablesDTO.setCidId(cashInflowData.getId());
         }
     }
 
