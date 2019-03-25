@@ -1,21 +1,20 @@
 package com.doodil.proforma.custom.service;
 
+import com.doodil.proforma.custom.CustomConstant;
 import com.doodil.proforma.custom.repository.*;
 import com.doodil.proforma.custom.service.dto.*;
 
+import com.doodil.proforma.custom.utils.CustomDeepCopy;
 import com.doodil.proforma.custom.utils.CustomUtil;
 import com.doodil.proforma.domain.*;
-import com.doodil.proforma.repository.*;
 import com.doodil.proforma.service.dto.*;
 import com.doodil.proforma.service.mapper.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.cglib.core.Local;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import javax.persistence.EntityManager;
 import java.time.LocalDate;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
@@ -70,128 +69,8 @@ public class CashBudgetService {
     CustomCashOutflowRangeRepository customCashOutflowRangeRepository;
     @Autowired
     CustomCashPayableDetailsRepository customCashPayableDetailsRepository;
-
-    @Transactional(readOnly = false,rollbackFor = Exception.class)
-    public void saveOrUpdateCashInflow_deprecated(CashInflowMasterWrapperDTO cashInflowMasterWrapperDTO) {
-        //save cashinflow master
-        CashInflowMaster cashInflowMaster = cashInflowMasterMapper.toEntity(cashInflowMasterWrapperDTO.getCashInflowMaster());
-        cashInflowMaster.setCompanyInfo(customUserService.getLoggedInCompanyInfo());
-        customCashInflowMasterRepository.save(cashInflowMaster);
-        cashInflowMasterWrapperDTO.setCashInflowMaster(cashInflowMasterMapper.toDto(cashInflowMaster));
-        //save recur data if there is no recur id in the records
-        for (CashbudgetWrapperDTO cashbudgetWrapperDTO: cashInflowMasterWrapperDTO.getCashbudgetWrappers()) {
-            if(cashbudgetWrapperDTO != null && cashbudgetWrapperDTO.getCashInflowWrappers() != null) {
-                for (CashInflowWrapperDTO cashInflowWrapperDTO : cashbudgetWrapperDTO.getCashInflowWrappers()) {
-                    CashInflowDataDTO cashInflowDataDTO = cashInflowWrapperDTO.getCashInflowData();
-                    if (cashInflowDataDTO.getInflowType() != null && "R".equalsIgnoreCase(cashInflowDataDTO.getInflowType())) {
-                        RecurringCBEntries recurringCBEntries = null;
-                        log.debug("cashInflowDataDTO::" + cashInflowDataDTO);
-                        if (cashInflowDataDTO.getRecurId() == null) {
-                            recurringCBEntries = getRecurringCEEntries(cashInflowDataDTO, null, "AR");
-                            recurringCBEntries.setId(cashInflowDataDTO.getRecurId());
-                            customRecurringCBEntriesRepository.save(recurringCBEntries);
-                            cashInflowDataDTO.setRecurId(recurringCBEntries.getId());
-                        }
-                    }
-                }
-            }
-        }
-        //save cashinflow data
-        //save receivables data - inside loop for each cash inflow data
-        String editId = null;
-        for (CashbudgetWrapperDTO cashbudgetWrapperDTO: cashInflowMasterWrapperDTO.getCashbudgetWrappers()) {
-            if(cashbudgetWrapperDTO != null && cashbudgetWrapperDTO.getCashInflowWrappers() != null) {
-                for (CashInflowWrapperDTO cashInflowWrapperDTO : cashbudgetWrapperDTO.getCashInflowWrappers()) {
-                    log.debug("salesDate::"+cashInflowWrapperDTO.getCashInflowData().getSalesDate());
-                    CashInflowData cashInflowData = cashInflowDataMapper.toEntity(cashInflowWrapperDTO.getCashInflowData());
-                    cashInflowData.setCompanyInfo(customUserService.getLoggedInCompanyInfo());
-                    customCashInflowDataRepository.save(cashInflowData);
-                    //before over writing with the saved object, retain the ids so that we can copy over again
-                    editId = cashInflowWrapperDTO.getCashInflowData().getEditId();
-                    cashInflowWrapperDTO.setCashInflowData(cashInflowDataMapper.toDto(cashInflowData));
-                    cashInflowWrapperDTO.getCashInflowData().setEditId(editId);
-                    deleteCashInflowSubData(cashInflowData);
-                    saveCashInflowReceivables(cashbudgetWrapperDTO, cashInflowWrapperDTO, cashInflowData);
-                }
-            }
-        }
-        saveOrUpdateARTotals(cashInflowMasterWrapperDTO);
-
-    }
-
-    public void saveOrUpdateARTotals(CashInflowMasterWrapperDTO cashInflowMasterWrapperDTO) {
-        //save totals
-        int count = 0;
-        List<CashInflowTotals> cashInflowTotals = new ArrayList<CashInflowTotals>();
-        for(DayDTO dayDTO: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(0).getDayList()) {
-            count = 0;
-            CashInflowTotals cashInflowTotals1 = new CashInflowTotals();
-            cashInflowTotals1.setCashInflowTotalDate(dayDTO.getEventDate());
-            cashInflowTotals1.setCompanyInfo(customUserService.getLoggedInCompanyInfo());
-            for (CashbudgetWrapperDTO cashbudgetWrapperDTO : cashInflowMasterWrapperDTO.getCashbudgetWrappers()) {
-                if(count > 1) {
-                    for (DayDTO dayDTO1 : cashbudgetWrapperDTO.getDayList()) {
-                        if (dayDTO.getEventDate().equals(dayDTO1.getEventDate())) {
-                            if (count == 2) {
-                                log.debug("dayDto1::"+dayDTO1);
-                                // cash collection for sales
-                                cashInflowTotals1.setCashCollectionSales(new Double(dayDTO1.getAmtValue()));
-                                if(dayDTO1.getTotalId() != null) {
-                                    cashInflowTotals1.setId(dayDTO1.getTotalId());
-                                }
-                            }
-                            else if(count == 3) {
-                                // Cash collection for Accounts Receivable
-                                cashInflowTotals1.setCashCollectionForAR(new Double(dayDTO1.getAmtValue()));
-                            }
-                            else if(count == 4) {
-                                // Total Accounts Receivable
-                                cashInflowTotals1.setTotalAR(new Double(dayDTO1.getAmtValue()));
-                            }
-                            else if(count == 5) {
-                                // Total Cash In flows
-                                cashInflowTotals1.setTotalCashInflow(new Double(dayDTO1.getAmtValue()));
-                            }
-                            else if(count == 6) {
-                                // Receivables that are due
-                                cashInflowTotals1.setDueARs(new Double(dayDTO1.getAmtValue()));
-                            }
-                            else if(count == 7) {
-                                // Net Missed collection (or net old Collection) on the day
-                                cashInflowTotals1.setNetMissedCollection(new Double(dayDTO1.getAmtValue()));
-                            }
-                            else if(count == 8) {
-                                // Sum of Receivables that are past due dates
-                                cashInflowTotals1.setSumOfDueARs(new Double(dayDTO1.getAmtValue()));
-                            }
-                            break;
-                        }
-                    }
-                }
-                count++;
-            }
-            cashInflowTotals.add(cashInflowTotals1);
-        }
-        log.debug("before cashInflowTotals:"+cashInflowTotals);
-        customCashInflowTotalsRepository.saveAll(cashInflowTotals);
-        log.debug("after cashInflowTotals:"+cashInflowTotals);
-        for(CashInflowTotals cashInflowTotals1: cashInflowTotals){
-            count = 0;
-            for (CashbudgetWrapperDTO cashbudgetWrapperDTO : cashInflowMasterWrapperDTO.getCashbudgetWrappers()) {
-                //log.debug(count+"::cashbudgetWrapperDTO::"+cashbudgetWrapperDTO);
-                if (count > 1) {
-                    for (DayDTO dayDTO1 : cashbudgetWrapperDTO.getDayList()) {
-                        if (cashInflowTotals1.getCashInflowTotalDate().equals(dayDTO1.getEventDate())) {
-                            //log.debug(cashInflowTotals1.getId()+"::setting total id for "+cashInflowTotals1.getCashInflowTotalDate());
-                            dayDTO1.setTotalId(cashInflowTotals1.getId());
-                            break;
-                        }
-                    }
-                }
-                count++;
-            }
-        }
-    }
+    @Autowired
+    CashInflowTotalsMapper cashInflowTotalsMapper;
 
     public void saveCashInflowReceivables_deprecated(CashbudgetWrapperDTO cashbudgetWrapperDTO, CashInflowWrapperDTO cashInflowWrapperDTO,
                                           CashInflowData cashInflowData) {
@@ -380,7 +259,7 @@ public class CashBudgetService {
         return recurringCBEntries;
     }
 
-    public CashInflowMasterWrapperDTO getCashInflowData(LocalDate localDate, String pageInd) {
+    public CashInflowMasterWrapperDTO getCashInflowData(LocalDate localDate, String pageind, String calfreq) {
         CashInflowMasterWrapperDTO cashInflowMasterWrapperDTO = new CashInflowMasterWrapperDTO();
         CashInflowMaster cashInflowMaster = customCashInflowMasterRepository.findByCompanyInfo(customUserService.getLoggedInCompanyInfo());
         if(cashInflowMaster != null) {
@@ -399,7 +278,7 @@ public class CashBudgetService {
         // add range cashinflows to note that there are some AR expecting in the future months
         addRangeCashInflows(cashInflowDataDTOS, stDate,endDate);
         log.debug("cashinflowdatas before adding recurring.."+cashInflowDataDTOS);
-        if(!("delete".equalsIgnoreCase(pageInd))){
+        if(!("delete".equalsIgnoreCase(pageind))){
             addCashInflowRecurringMasterEntries(cashInflowDataDTOS, stDate);
         }
         List<CashbudgetWrapperDTO> cashbudgetWrapperDTOs = new ArrayList<CashbudgetWrapperDTO>();
@@ -467,9 +346,9 @@ public class CashBudgetService {
                     cashInflowReceivablesDTOList = new ArrayList<CashInflowReceivablesDTO>();
                     addReceivableForRecurringEntries(cashInflowDataDTO, cashInflowReceivablesDTOList, stDate);
                 }
-                log.debug("after recurring...."+cashInflowReceivablesDTOList);
+                //log.debug("after recurring...."+cashInflowReceivablesDTOList);
                 //addTargetReceibables(cashInflowWrapperDTO, cashInflowReceivablesDTOList);
-                log.debug(cashInflowDataDTO.getId()+"::R::cashReceivablesList:"+cashInflowReceivablesDTOList);
+                //log.debug(cashInflowDataDTO.getId()+"::R::cashReceivablesList:"+cashInflowReceivablesDTOList);
                 cashInflowWrapperDTO.setCashInflowRbls(cashInflowReceivablesDTOList);
                 cashInflowWrapperDTOS2.add(cashInflowWrapperDTO);
                 List<DayDTO> dayDTOS1 = customUserService.getDayList(localDate);
@@ -490,51 +369,85 @@ public class CashBudgetService {
         LocalDate prevDate = stDate.minusDays(1);
         log.debug(customUserService.getLoggedInCompanyInfo().getId()+"prevDate::"+prevDate);
         CashInflowTotals cashInflowTotals1 = customCashInflowTotalsRepository.findTotalsByDateAndCompanyInfo(customUserService.getLoggedInCompanyInfo().getId(),prevDate);
+        CashInflowTotalsDTO prevCashInflowTotals = null;
         // then totals ...
+        log.debug("endDate from "+stDate+"::"+endDate);
         List<CashInflowTotals> cashInflowTotals = customCashInflowTotalsRepository.findByTotalDateAndCompanyInfo(customUserService.getLoggedInCompanyInfo().getId(),stDate,endDate);
         Double carryForwardAR = 0.0;
         if(cashInflowTotals1 != null && cashInflowTotals1.getId() != null) {
             carryForwardAR = cashInflowTotals1.getTotalAR();
             log.debug("carryforward from "+stDate+"::"+carryForwardAR);
-            List<CashInflowTotals> totalsList = new ArrayList<CashInflowTotals>();
-            totalsList.add(cashInflowTotals1);
-            for(int i=2;i<=8;i++) {
-                List<DayDTO> dayDTOS1 = customUserService.getDayList(localDate);
-                for (DayDTO dayDTO : dayDTOS1) {
-                    setCashInflowTotalValue(totalsList, dayDTO, i);
-                }
-                cashbudgetWrapperDTO = new CashbudgetWrapperDTO();
-                cashbudgetWrapperDTO.setDayList(dayDTOS1);
-                cashbudgetWrapperDTOs.add(cashbudgetWrapperDTO);
-            }
+            prevCashInflowTotals = cashInflowTotalsMapper.toDto(cashInflowTotals1);
         }
         else {
-            cashInflowTotals = null;
+            //get the last record of totals
+            cashInflowTotals1 = customCashInflowTotalsRepository.findTotalsByMaxIdAndCompanyInfo(customUserService.getLoggedInCompanyInfo().getId());
+            if(cashInflowTotals1 != null) {
+                carryForwardAR = cashInflowTotals1.getTotalAR();
+                prevCashInflowTotals = cashInflowTotalsMapper.toDto(cashInflowTotals1);
+                log.debug("carry forward from latest.."+carryForwardAR);
+            }
         }
+
         if(cashInflowTotals != null && cashInflowTotals.size() > 0) {
+            List<CashInflowTotalsDTO> cashInflowTotalsDTOList = cashInflowTotalsMapper.toDto(cashInflowTotals);
             //carryForwardAR = cashInflowTotals.get(cashInflowTotals.size() - 1).getTotalAR();
-            log.debug("there is no carryforward as there are no prev entries only current month is there");
-            for(int i=2;i<=8;i++) {
+            log.debug("there is no carryforward as there are no prev entries only current month is there"+cashInflowTotals);
+            //for(int i=2;i<=8;i++) {
                 List<DayDTO> dayDTOS1 = customUserService.getDayList(localDate);
                 for (DayDTO dayDTO : dayDTOS1) {
-                    setCashInflowTotalValue(cashInflowTotals, dayDTO, i);
+                    log.debug("setting totals for "+dayDTO.getEventDate());
+                    setCashInflowTotalValue(cashInflowTotalsDTOList, dayDTO);
+                    //get the last total record
+                    if (dayDTO.getCashInflowTotals() == null) {
+                        dayDTO.setCashInflowTotals(cashInflowTotalsDTOList.get(cashInflowTotalsDTOList.size() - 1));
+                    }
                 }
                 cashbudgetWrapperDTO = new CashbudgetWrapperDTO();
                 cashbudgetWrapperDTO.setDayList(dayDTOS1);
                 cashbudgetWrapperDTOs.add(cashbudgetWrapperDTO);
+            //}
+        }
+        else if(prevCashInflowTotals != null) {
+            // if there are no records for the current period repeat the last record of the prev period
+            List<DayDTO> dayDTOS1 = customUserService.getDayList(localDate);
+            for (DayDTO dayDTO : dayDTOS1) {
+                log.debug("setting totals for "+dayDTO.getEventDate());
+                //get the last total record
+                if (dayDTO.getCashInflowTotals() == null) {
+                    dayDTO.setCashInflowTotals(prevCashInflowTotals);
+                }
             }
+            cashbudgetWrapperDTO = new CashbudgetWrapperDTO();
+            cashbudgetWrapperDTO.setDayList(dayDTOS1);
+            cashbudgetWrapperDTOs.add(cashbudgetWrapperDTO);
         }
         else {
-            cashInflowTotals1 = null;
-        }
-        if(cashInflowTotals == null && cashInflowTotals1 == null) {
             log.debug("there is no carryforward as there are no prev entries and current month");
             //if there is nothing ... then add dummy records
-            setCashflowTotalsPlaceHolders(cashbudgetWrapperDTOs, dayDTOS);
+            List<DayDTO> dayDTOS1 = customUserService.getDayList(localDate);
+            for (DayDTO dayDTO : dayDTOS1) {
+                dayDTO.setCashInflowTotals(getCashInflowTotalsWithZeros());
+            }
+            cashbudgetWrapperDTO = new CashbudgetWrapperDTO();
+            cashbudgetWrapperDTO.setDayList(dayDTOS1);
+            cashbudgetWrapperDTOs.add(cashbudgetWrapperDTO);
         }
         cashInflowMasterWrapperDTO.setCarryForwardAR(carryForwardAR);
         cashInflowMasterWrapperDTO.setCashbudgetWrappers(cashbudgetWrapperDTOs);
         return cashInflowMasterWrapperDTO;
+    }
+
+    private CashInflowTotalsDTO getCashInflowTotalsWithZeros() {
+        CashInflowTotalsDTO cashInflowTotalsDTO = new CashInflowTotalsDTO();
+        cashInflowTotalsDTO.setCashCollectionSales(0.0);
+        cashInflowTotalsDTO.setSumOfDueARs(0.0);
+        cashInflowTotalsDTO.setNetMissedCollection(0.0);
+        cashInflowTotalsDTO.setDueARs(0.0);
+        cashInflowTotalsDTO.setTotalCashInflow(0.0);
+        cashInflowTotalsDTO.setTotalAR(0.0);
+        cashInflowTotalsDTO.setCashCollectionForAR(0.0);
+        return cashInflowTotalsDTO;
     }
 
     public void addReceivedAmts_old(List<CashInflowReceivablesDTO> cashInflowReceivablesDTOList) {
@@ -704,10 +617,15 @@ public class CashBudgetService {
         return false;
     }
 
-    private void setCashInflowTotalValue(List<CashInflowTotals> cashInflowTotals, DayDTO dayDTO, int count) {
-        for(CashInflowTotals cashInflowTotals1: cashInflowTotals) {
+    private void setCashInflowTotalValue(List<CashInflowTotalsDTO> cashInflowTotals, DayDTO dayDTO) {
+        for(CashInflowTotalsDTO cashInflowTotals1: cashInflowTotals) {
             if(cashInflowTotals1.getCashInflowTotalDate().equals(dayDTO.getEventDate())){
+                log.debug("setting totals for inside "+cashInflowTotals1.getCashInflowTotalDate());
                 dayDTO.setTotalId(cashInflowTotals1.getId());
+                //just set the cashtotals object for that date
+                //in ui respective fields will be shown
+                dayDTO.setCashInflowTotals(cashInflowTotals1);
+                /*
                 if (count == 2) {
                     // cash collection for sales
                     dayDTO.setAmtValue(cashInflowTotals1.getCashCollectionSales()+"");
@@ -717,6 +635,7 @@ public class CashBudgetService {
                     dayDTO.setAmtValue(cashInflowTotals1.getCashCollectionForAR()+"");
                 }
                 else if(count == 4) {
+                    log.debug("totalAR:::::"+cashInflowTotals1.getTotalAR()+"::"+dayDTO.getEventDate());
                     // Total Accounts Receivable
                     dayDTO.setAmtValue(cashInflowTotals1.getTotalAR()+"");
                 }
@@ -733,9 +652,11 @@ public class CashBudgetService {
                     dayDTO.setAmtValue(cashInflowTotals1.getNetMissedCollection()+"");
                 }
                 else if(count == 8) {
+                    log.debug("getSumOfDueARs:::::"+cashInflowTotals1.getSumOfDueARs()+"::"+dayDTO.getEventDate());
                     // Sum of Receivables that are past due dates
                     dayDTO.setAmtValue(cashInflowTotals1.getSumOfDueARs()+"");
                 }
+                */
                 break;
             }
         }
@@ -781,30 +702,6 @@ public class CashBudgetService {
     private void setCashflowTotalsPlaceHolders(List<CashbudgetWrapperDTO> cashbudgetWrapperDTOs, List<DayDTO> dayDTOS) {
         CashbudgetWrapperDTO cashbudgetWrapperDTO = null;
         // adding totals - cash collection for sales
-        cashbudgetWrapperDTO = new CashbudgetWrapperDTO();
-        cashbudgetWrapperDTO.setDayList(dayDTOS);
-        cashbudgetWrapperDTOs.add(cashbudgetWrapperDTO);
-        // Cash collection for Accounts Receivable
-        cashbudgetWrapperDTO = new CashbudgetWrapperDTO();
-        cashbudgetWrapperDTO.setDayList(dayDTOS);
-        cashbudgetWrapperDTOs.add(cashbudgetWrapperDTO);
-        // Total Accounts Receivable
-        cashbudgetWrapperDTO = new CashbudgetWrapperDTO();
-        cashbudgetWrapperDTO.setDayList(dayDTOS);
-        cashbudgetWrapperDTOs.add(cashbudgetWrapperDTO);
-        // Total Cash In flows
-        cashbudgetWrapperDTO = new CashbudgetWrapperDTO();
-        cashbudgetWrapperDTO.setDayList(dayDTOS);
-        cashbudgetWrapperDTOs.add(cashbudgetWrapperDTO);
-        // Receivables that are due
-        cashbudgetWrapperDTO = new CashbudgetWrapperDTO();
-        cashbudgetWrapperDTO.setDayList(dayDTOS);
-        cashbudgetWrapperDTOs.add(cashbudgetWrapperDTO);
-        // Net Missed collection (or net old Collection) on the day
-        cashbudgetWrapperDTO = new CashbudgetWrapperDTO();
-        cashbudgetWrapperDTO.setDayList(dayDTOS);
-        cashbudgetWrapperDTOs.add(cashbudgetWrapperDTO);
-        // Sum of Receivables that are past due dates
         cashbudgetWrapperDTO = new CashbudgetWrapperDTO();
         cashbudgetWrapperDTO.setDayList(dayDTOS);
         cashbudgetWrapperDTOs.add(cashbudgetWrapperDTO);
@@ -1381,12 +1278,14 @@ public class CashBudgetService {
 
     @Transactional(readOnly = false,rollbackFor = Exception.class)
     public void deleteCashInflowData(Long id) {
-        CashInflowData cashInflowData = new CashInflowData();
-        cashInflowData.setId(id);
+        CashInflowData cashInflowData = customCashInflowDataRepository.getOne(id);
         customCashReceivableDetailsRepository.deleteByCid(cashInflowData);
         customCashInflowReceivablesRepository.deleteByCid(cashInflowData);
         customCashInflowRangeRepository.deleteByCid(cashInflowData);
         customCashInflowDataRepository.delete(cashInflowData);
+        List<LocalDate> salesDate = new ArrayList<LocalDate>();
+        salesDate.add(cashInflowData.getSalesDate());
+        updateTotalsWithDates(salesDate);
     }
 
     @Transactional(readOnly = false,rollbackFor = Exception.class)
@@ -1493,500 +1392,106 @@ public class CashBudgetService {
      * get the earliest changed date or the earliest sales date from the list of cashinflows
      * then get all receivables from that date to the current date or to the last date from the receivables which ever is later
      * the get all totals from start date to the end date and update all totals by recalculating each and save to the DB together
-     * @param cashInflowMasterWrapperDTO
+     * @param
      */
-    public void recalculateARTotals(CashInflowMasterWrapperDTO cashInflowMasterWrapperDTO) {
-        //calculate total carry forward ARs
-        Double totalCarryForwardAR = 0.0;
-        for (CashInflowWrapperDTO cashInflowWrapperDTO: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(0).getCashInflowWrappers()){
-            if (cashInflowWrapperDTO.getCashInflowData().getCarryForwardAR() != null ) {
-                totalCarryForwardAR = totalCarryForwardAR + cashInflowWrapperDTO.getCashInflowData().getCarryForwardAR();
+    public void recalculateARTotals(List<CashInflowTotalsDTO> cashInflowTotalsDTOList, List<CashInflowReceivablesDTO> cashInflowReceivablesDTOList) {
+        Double cashCollectionsForSales = 0.0;
+        Double cashCollectionsAR = 0.0;
+        Double totalAR = 0.0;
+        Double totalCashInflows = 0.0;
+        Double dueReceivables = 0.0;
+        Double netMissedCollection = 0.0;
+        Double sumOfReceivables = 0.0;
+        int count = 0;
+        for(CashInflowTotalsDTO cashInflowTotalsDTO: cashInflowTotalsDTOList) {
+            log.debug("count...."+count+"::date::"+cashInflowTotalsDTO.getCashInflowTotalDate());
+            if(count == 0){
+                //just to get the totalAR one day prior
+                if(cashInflowTotalsDTO.getTotalAR() != null) {
+                    totalAR = cashInflowTotalsDTO.getTotalAR();
+                }
+                if(cashInflowTotalsDTO.getSumOfDueARs() != null) {
+                    sumOfReceivables = cashInflowTotalsDTO.getSumOfDueARs();
+                }
+                count++;
+                continue;
             }
-        }
-        for (CashInflowWrapperDTO cashInflowWrapperDTO: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(1).getCashInflowWrappers()){
-            if (cashInflowWrapperDTO.getCashInflowData().getCarryForwardAR() != null ) {
-                totalCarryForwardAR = totalCarryForwardAR + cashInflowWrapperDTO.getCashInflowData().getCarryForwardAR();
-            }
-        }
-        // every calculation should be in one month loop
-        //calculate net missed sum
-        Double netMissedSum = 0.0;
-        Double delayedAmt = 0.0;
-        String temp = "0";
-        DayDTO prevDt = null;
-        String prevDtSum = "0";
-        // one loop for getting from regular cashinflow and another loop for getting from recurring
-        for (DayDTO dt: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(8).getDayList()) {
-            delayedAmt = 0.0;
-            dt.amtValue = "0";
-            netMissedSum = 0.0;
-            temp = this.getAmount(cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(7).getDayList(), dt);
-            if (temp != null) {
-                netMissedSum = new Double(temp);
-            }
-            for (DayDTOWrapper ddw: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(0).getDayDTOWrappers()) {
-                for (DayDTO dayDto: ddw.getDayDtos()) {
-                    if (dayDto.getCashInflowReceivables() != null && checkDates(dayDto.getEventDate(), dt.getEventDate())) {
-                        for (CashInflowReceivablesDTO cir1: dayDto.getCashInflowReceivables()) {
-                            if (cir1.getPaidAmt() != null && cir1.getColorCode().equalsIgnoreCase("R")) {
-                                delayedAmt = delayedAmt + cir1.getPaidAmt();
-                            }
-                        }
-                        break;
+            cashCollectionsForSales = 0.0;
+            cashCollectionsAR = 0.0;
+            totalCashInflows = 0.0;
+            dueReceivables = 0.0;
+            netMissedCollection = 0.0;
+            for(CashInflowReceivablesDTO cashInflowReceivablesDTO: cashInflowReceivablesDTOList){
+                //log.debug("totalAR...."+totalAR);
+                if((("G".equalsIgnoreCase(cashInflowReceivablesDTO.getColorCode()) ||
+                    "Y".equalsIgnoreCase(cashInflowReceivablesDTO.getColorCode())) &&
+                        cashInflowReceivablesDTO.getReceivableDate().equals(cashInflowTotalsDTO.getCashInflowTotalDate())) ||
+                    (("W".equalsIgnoreCase(cashInflowReceivablesDTO.getColorCode()) ||
+                        "R".equalsIgnoreCase(cashInflowReceivablesDTO.getColorCode())) &&
+                        cashInflowReceivablesDTO.getReceivedDate().equals(cashInflowTotalsDTO.getCashInflowTotalDate()))) {
+                    //log.debug("cashinflowReceivablesDto..totals..."+cashInflowReceivablesDTO);
+                    if ("G".equalsIgnoreCase(cashInflowReceivablesDTO.getColorCode())) {
+                        log.debug("Green...."+cashInflowReceivablesDTO+"::totalAR::"+totalAR+"::receamt::"+cashInflowReceivablesDTO.getReceivableAmt());
+                        cashCollectionsForSales = cashCollectionsForSales + cashInflowReceivablesDTO.getReceivedAmt();
+                        totalAR = totalAR + cashInflowReceivablesDTO.getReceivableAmt();
+                        totalCashInflows = totalCashInflows + cashInflowReceivablesDTO.getReceivedAmt();
+                    }
+                    else if ("Y".equalsIgnoreCase(cashInflowReceivablesDTO.getColorCode())) {
+                        log.debug("Yellow...."+cashInflowReceivablesDTO);
+                        //its already added from the green or carry forward
+                        //totalAR = totalAR + cashInflowReceivablesDTO.getReceivableAmt();
+                        dueReceivables = dueReceivables + cashInflowReceivablesDTO.getReceivableAmt();
+                        // add it to net missed and if there is a W - subtract from net missed
+                        netMissedCollection = netMissedCollection + cashInflowReceivablesDTO.getReceivableAmt();
+                        sumOfReceivables = sumOfReceivables + cashInflowReceivablesDTO.getReceivableAmt();
+                    }
+                    else if ("W".equalsIgnoreCase(cashInflowReceivablesDTO.getColorCode())) {
+                        log.debug("White...."+cashInflowReceivablesDTO);
+                        totalAR = totalAR - cashInflowReceivablesDTO.getReceivedAmt();
+                        totalCashInflows = totalCashInflows + cashInflowReceivablesDTO.getReceivedAmt();
+                        cashCollectionsAR = cashCollectionsAR + cashInflowReceivablesDTO.getReceivedAmt();
+                        // add it to net missed and if there is a W - subtract from net missed
+                        // W means it will be on the same day - it will get nullify
+                        // if there is no W for that day with that amount then it will show in the netmissedday
+                        netMissedCollection = netMissedCollection - cashInflowReceivablesDTO.getReceivedAmt();
+                        sumOfReceivables = sumOfReceivables - cashInflowReceivablesDTO.getReceivedAmt();
+                    }
+                    else if ("R".equalsIgnoreCase(cashInflowReceivablesDTO.getColorCode())) {
+                        log.debug("Red...."+cashInflowReceivablesDTO);
+                        totalAR = totalAR - cashInflowReceivablesDTO.getReceivedAmt();
+                        totalCashInflows = totalCashInflows + cashInflowReceivablesDTO.getReceivedAmt();
+                        cashCollectionsAR = cashCollectionsAR + cashInflowReceivablesDTO.getReceivedAmt();
+                        sumOfReceivables = sumOfReceivables - cashInflowReceivablesDTO.getReceivedAmt();
                     }
                 }
             }
-            if (delayedAmt > 0.0) {
-                netMissedSum = netMissedSum - delayedAmt;
-            }
-            dt.amtValue = netMissedSum + "";
+            count++;
+            log.debug("cashCollectionsForSales...."+cashCollectionsForSales);
+            log.debug("cashCollectionsAR...."+cashCollectionsAR);
+            log.debug("totalAR...."+totalAR);
+            log.debug("totalCashInflows...."+totalCashInflows);
+            log.debug("dueReceivables...."+dueReceivables);
+            log.debug("netMissedCollection...."+netMissedCollection);
+            log.debug("sumOfReceivables...."+sumOfReceivables);
+            cashInflowTotalsDTO.setCashCollectionSales(cashCollectionsForSales);
+            cashInflowTotalsDTO.setCashCollectionForAR(cashCollectionsAR);
+            cashInflowTotalsDTO.setTotalAR(totalAR);
+            cashInflowTotalsDTO.setTotalCashInflow(totalCashInflows);
+            cashInflowTotalsDTO.setDueARs(dueReceivables);
+            cashInflowTotalsDTO.setNetMissedCollection(netMissedCollection);
+            cashInflowTotalsDTO.setSumOfDueARs(sumOfReceivables);
         }
-        for (DayDTO dt: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(8).getDayList()) {
-            prevDtSum = "0" ;
-            netMissedSum = 0.0;
-            delayedAmt = 0.0;
-            for (DayDTOWrapper ddw: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(1).getDayDTOWrappers()) {
-                for (DayDTO dayDto: ddw.getDayDtos()) {
-                    if (dayDto.getCashInflowReceivables() != null && checkDates(dayDto.getEventDate(), dt.getEventDate())) {
-                        for (CashInflowReceivablesDTO cir1: dayDto.getCashInflowReceivables()) {
-                            if (cir1.getPaidAmt() != null && cir1.getColorCode().equalsIgnoreCase("R")) {
-                                delayedAmt = delayedAmt + cir1.getPaidAmt();
-                            }
-                        }
-                        break;
-                    }
-                }
-            }
-            if (prevDt != null) {
-                prevDtSum = this.getAmount(cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(8).getDayList(), prevDt);
-            }
-            netMissedSum = new Double(prevDtSum) + new Double(this.getAmount(cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(8).getDayList(), dt)) - delayedAmt;
-            dt.amtValue = netMissedSum + "";
-            prevDt = dt;
-        }
-
-        //net missed day collection
-        Double netMissedDay = 0.0;
-        Double targetAmt = 0.0;
-        Double paidAmt = 0.0;
-        for (DayDTO dt: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(7).getDayList()) {
-            dt.amtValue = "0";
-            netMissedDay = 0.0;
-            for (DayDTOWrapper ddw: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(0).getDayDTOWrappers()) {
-                for (DayDTO dayDto: ddw.getDayDtos()) {
-                    if (dayDto.getCashInflowReceivables() != null && checkDates(dayDto.getEventDate(), dt.getEventDate())) {
-                        targetAmt = 0.0;
-                        paidAmt = 0.0;
-                        for (CashInflowReceivablesDTO cir1: dayDto.getCashInflowReceivables()) {
-                            if (cir1.getTargetAmt() != null && cir1.getColorCode().equalsIgnoreCase("Y")) {
-                                targetAmt = cir1.getTargetAmt();
-                            } else if (cir1.getPaidAmt() != null) {
-                                paidAmt = cir1.getPaidAmt();
-                            }
-                        }
-                        if (targetAmt > 0.0) {
-                            netMissedDay = netMissedDay + (targetAmt - paidAmt);
-                        }
-                        break;
-                    }
-                }
-            }
-            dt.amtValue = netMissedDay + "";
-        }
-        for (DayDTO dt: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(7).getDayList()) {
-            netMissedDay = 0.0;
-            for (DayDTOWrapper ddw: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(1).getDayDTOWrappers()) {
-                for (DayDTO dayDto: ddw.getDayDtos()) {
-                    if (dayDto.getCashInflowReceivables() != null && checkDates(dayDto.getEventDate(), dt.getEventDate())) {
-                        targetAmt = 0.0;
-                        paidAmt = 0.0;
-                        for (CashInflowReceivablesDTO cir1: dayDto.getCashInflowReceivables()) {
-                            if (cir1.getTargetAmt() != null && cir1.getColorCode().equalsIgnoreCase("Y")) {
-                                targetAmt = cir1.getTargetAmt();
-                            } else if (cir1.getPaidAmt() != null) {
-                                paidAmt = cir1.getPaidAmt();
-                            }
-                        }
-                        if (targetAmt > 0) {
-                            netMissedDay = netMissedDay + (targetAmt - paidAmt);
-                        }
-                        break;
-                    }
-                }
-            }
-            netMissedDay = netMissedDay + new Double(getAmount(cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(7).getDayList(), dt));
-            dt.amtValue = netMissedDay + "";
-        }
-
-        // Receivables that are due from sales
-        Double dayDueARs = 0.0;
-        for (DayDTO dt: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(6).getDayList()) {
-            dt.amtValue = "0";
-            dayDueARs = 0.0;
-            for (DayDTOWrapper ddw: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(0).getDayDTOWrappers()) {
-                for (DayDTO dayDto: ddw.getDayDtos()) {
-                    if (dayDto.getCashInflowReceivables() != null && checkDates(dayDto.getEventDate(), dt.getEventDate())) {
-                        for (CashInflowReceivablesDTO cir1: dayDto.getCashInflowReceivables()) {
-                            if (cir1.getTargetAmt() != null && cir1.getColorCode().equalsIgnoreCase("Y")) {
-                                dayDueARs = dayDueARs + cir1.getTargetAmt();
-                            }
-                        }
-                        break;
-                    }
-                }
-            }
-            dt.amtValue = dayDueARs + "";
-        }
-        // from recurring
-        for (DayDTO dt: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(6).getDayList()) {
-            dayDueARs = 0.0;
-            for (DayDTOWrapper ddw: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(1).getDayDTOWrappers()) {
-                for (DayDTO dayDto: ddw.getDayDtos()) {
-                    if (dayDto.getCashInflowReceivables() != null && checkDates(dayDto.getEventDate(), dt.getEventDate())) {
-                        for (CashInflowReceivablesDTO cir1: dayDto.getCashInflowReceivables()) {
-                            if (cir1.getTargetAmt() != null && cir1.getColorCode().equalsIgnoreCase("Y")) {
-                                dayDueARs = dayDueARs + cir1.getTargetAmt();
-                            }
-                        }
-                        break;
-                    }
-                }
-            }
-            dayDueARs = dayDueARs + new Double(getAmount(cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(6).getDayList(), dt));
-            dt.amtValue = dayDueARs + "";
-        }
-
-        // Total CashInflows
-        Double totalCif = 0.0;
-        for (DayDTO dt: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(5).getDayList()) {
-            dt.amtValue = "0";
-            totalCif = new Double(getAmount(cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(2).getDayList(), dt)) +
-                new Double(getAmount(cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(3).getDayList(), dt));
-            dt.amtValue = totalCif + "";
-        }
-
-        // Cash collection for Accounts Receivable
-        Double cashARs = 0.0;
-        for (DayDTO dt: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(3).getDayList()) {
-            dt.amtValue = "0";
-            cashARs = 0.0;
-            for (DayDTOWrapper ddw: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(0).getDayDTOWrappers()) {
-                for (DayDTO dayDto: ddw.getDayDtos()) {
-                    if (dayDto.getCashInflowReceivables() != null && checkDates(dayDto.getEventDate(), dt.getEventDate())) {
-                        for (CashInflowReceivablesDTO cir1: dayDto.getCashInflowReceivables()) {
-                            if (cir1.getPaidAmt() != null && (cir1.getColorCode().equalsIgnoreCase("W") || cir1.getColorCode().equalsIgnoreCase("R"))) {
-                                cashARs = cashARs + cir1.getPaidAmt();
-                            }
-                        }
-                        break;
-                    }
-                }
-            }
-            dt.amtValue = cashARs + "";
-        }
-        for (DayDTO dt: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(3).getDayList()) {
-            cashARs = 0.0;
-            for (DayDTOWrapper ddw: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(1).getDayDTOWrappers()) {
-                for (DayDTO dayDto: ddw.getDayDtos()) {
-                    if (dayDto.getCashInflowReceivables() != null && checkDates(dayDto.getEventDate(), dt.getEventDate())) {
-                        for (CashInflowReceivablesDTO cir1: dayDto.getCashInflowReceivables()) {
-                            if (cir1.getPaidAmt() != null && (cir1.getColorCode().equalsIgnoreCase("W") || cir1.getColorCode().equalsIgnoreCase("R"))) {
-                                cashARs = cashARs + cir1.getPaidAmt();
-                            }
-                        }
-                        break;
-                    }
-                }
-            }
-            cashARs = cashARs + new Double(getAmount(cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(3).getDayList(), dt));
-            dt.amtValue = cashARs + "";
-        }
-
-        // Total Accounts Receivable
-        // start with the prev total acct receivables
-        Double totalARs = totalCarryForwardAR;
-        for (DayDTO dt: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(4).getDayList()) {
-            dt.amtValue = "0";
-            for (DayDTOWrapper ddw: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(0).getDayDTOWrappers()) {
-                for (DayDTO dayDto: ddw.getDayDtos()) {
-                    if (dayDto.getCashInflowReceivables() != null && checkDates(dayDto.getEventDate(), dt.getEventDate())) {
-                        for (CashInflowReceivablesDTO cir1: dayDto.getCashInflowReceivables()) {
-                            if (cir1.getReceivableAmt() != null && cir1.getColorCode().equalsIgnoreCase("G")) {
-                                totalARs = totalARs + cir1.getReceivableAmt();
-                            }
-                        }
-                        break;
-                    }
-                }
-            }
-            totalARs = totalARs - new Double(getAmount(cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(3).getDayList(), dt));
-            dt.amtValue = totalARs + "";
-        }
-        // <!--cash collection for sales-->
-        // get cash collection for sales .. salescashamt for each date for all products and stored in the array of cash inflow totals
-        Double totalCashCollection = 0.0;
-        for (DayDTO dt: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(2).getDayList()) {
-            dt.amtValue = "0";
-            totalCashCollection = 0.0;
-            for (CashInflowWrapperDTO ciw: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(0).getCashInflowWrappers()){
-                if (ciw.getCashInflowData().getSalesDate() != null && checkDates(ciw.getCashInflowData().getSalesDate(), dt.getEventDate())) {
-                    totalCashCollection = totalCashCollection + ciw.getCashInflowData().getSalesCashAmount();
-                    continue;
-                }
-            }
-            dt.amtValue = totalCashCollection + "";
-        }
+        customCashInflowTotalsRepository.saveAll(cashInflowTotalsMapper.toEntity(cashInflowTotalsDTOList));
     }
 
-    public void recalculateARTotals_old(CashInflowMasterWrapperDTO cashInflowMasterWrapperDTO) {
-        //calculate total carry forward ARs
-        Double totalCarryForwardAR = 0.0;
-        for (CashInflowWrapperDTO cashInflowWrapperDTO: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(0).getCashInflowWrappers()){
-            if (cashInflowWrapperDTO.getCashInflowData().getCarryForwardAR() != null ) {
-                totalCarryForwardAR = totalCarryForwardAR + cashInflowWrapperDTO.getCashInflowData().getCarryForwardAR();
-            }
-        }
-        for (CashInflowWrapperDTO cashInflowWrapperDTO: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(1).getCashInflowWrappers()){
-            if (cashInflowWrapperDTO.getCashInflowData().getCarryForwardAR() != null ) {
-                totalCarryForwardAR = totalCarryForwardAR + cashInflowWrapperDTO.getCashInflowData().getCarryForwardAR();
-            }
-        }
 
-        //calculate net missed sum
-        Double netMissedSum = 0.0;
-        Double delayedAmt = 0.0;
-        String temp = "0";
-        DayDTO prevDt = null;
-        String prevDtSum = "0";
-        for (DayDTO dt: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(8).getDayList()) {
-            delayedAmt = 0.0;
-            dt.amtValue = "0";
-            netMissedSum = 0.0;
-            temp = this.getAmount(cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(7).getDayList(), dt);
-            if (temp != null) {
-                netMissedSum = new Double(temp);
-            }
-            for (DayDTOWrapper ddw: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(0).getDayDTOWrappers()) {
-                for (DayDTO dayDto: ddw.getDayDtos()) {
-                    if (dayDto.getCashInflowReceivables() != null && checkDates(dayDto.getEventDate(), dt.getEventDate())) {
-                        for (CashInflowReceivablesDTO cir1: dayDto.getCashInflowReceivables()) {
-                            if (cir1.getPaidAmt() != null && cir1.getColorCode().equalsIgnoreCase("R")) {
-                                delayedAmt = delayedAmt + cir1.getPaidAmt();
-                            }
-                        }
-                        break;
-                    }
-                }
-            }
-            if (delayedAmt > 0.0) {
-                netMissedSum = netMissedSum - delayedAmt;
-            }
-            dt.amtValue = netMissedSum + "";
-        }
-        for (DayDTO dt: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(8).getDayList()) {
-            prevDtSum = "0" ;
-            netMissedSum = 0.0;
-            delayedAmt = 0.0;
-            for (DayDTOWrapper ddw: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(1).getDayDTOWrappers()) {
-                for (DayDTO dayDto: ddw.getDayDtos()) {
-                    if (dayDto.getCashInflowReceivables() != null && checkDates(dayDto.getEventDate(), dt.getEventDate())) {
-                        for (CashInflowReceivablesDTO cir1: dayDto.getCashInflowReceivables()) {
-                            if (cir1.getPaidAmt() != null && cir1.getColorCode().equalsIgnoreCase("R")) {
-                                delayedAmt = delayedAmt + cir1.getPaidAmt();
-                            }
-                        }
-                        break;
-                    }
-                }
-            }
-            if (prevDt != null) {
-                prevDtSum = this.getAmount(cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(8).getDayList(), prevDt);
-            }
-            netMissedSum = new Double(prevDtSum) + new Double(this.getAmount(cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(8).getDayList(), dt)) - delayedAmt;
-            dt.amtValue = netMissedSum + "";
-            prevDt = dt;
-        }
-
-        //net missed day collection
-        Double netMissedDay = 0.0;
-        Double targetAmt = 0.0;
-        Double paidAmt = 0.0;
-        for (DayDTO dt: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(7).getDayList()) {
-            dt.amtValue = "0";
-            netMissedDay = 0.0;
-            for (DayDTOWrapper ddw: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(0).getDayDTOWrappers()) {
-                for (DayDTO dayDto: ddw.getDayDtos()) {
-                    if (dayDto.getCashInflowReceivables() != null && checkDates(dayDto.getEventDate(), dt.getEventDate())) {
-                        targetAmt = 0.0;
-                        paidAmt = 0.0;
-                        for (CashInflowReceivablesDTO cir1: dayDto.getCashInflowReceivables()) {
-                            if (cir1.getTargetAmt() != null && cir1.getColorCode().equalsIgnoreCase("Y")) {
-                                targetAmt = cir1.getTargetAmt();
-                            } else if (cir1.getPaidAmt() != null) {
-                                paidAmt = cir1.getPaidAmt();
-                            }
-                        }
-                        if (targetAmt > 0.0) {
-                            netMissedDay = netMissedDay + (targetAmt - paidAmt);
-                        }
-                        break;
-                    }
-                }
-            }
-            dt.amtValue = netMissedDay + "";
-        }
-        for (DayDTO dt: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(7).getDayList()) {
-            netMissedDay = 0.0;
-            for (DayDTOWrapper ddw: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(1).getDayDTOWrappers()) {
-                for (DayDTO dayDto: ddw.getDayDtos()) {
-                    if (dayDto.getCashInflowReceivables() != null && checkDates(dayDto.getEventDate(), dt.getEventDate())) {
-                        targetAmt = 0.0;
-                        paidAmt = 0.0;
-                        for (CashInflowReceivablesDTO cir1: dayDto.getCashInflowReceivables()) {
-                            if (cir1.getTargetAmt() != null && cir1.getColorCode().equalsIgnoreCase("Y")) {
-                                targetAmt = cir1.getTargetAmt();
-                            } else if (cir1.getPaidAmt() != null) {
-                                paidAmt = cir1.getPaidAmt();
-                            }
-                        }
-                        if (targetAmt > 0) {
-                            netMissedDay = netMissedDay + (targetAmt - paidAmt);
-                        }
-                        break;
-                    }
-                }
-            }
-            netMissedDay = netMissedDay + new Double(getAmount(cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(7).getDayList(), dt));
-            dt.amtValue = netMissedDay + "";
-        }
-
-        // Receivables that are due from sales
-        Double dayDueARs = 0.0;
-        for (DayDTO dt: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(6).getDayList()) {
-            dt.amtValue = "0";
-            dayDueARs = 0.0;
-            for (DayDTOWrapper ddw: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(0).getDayDTOWrappers()) {
-                for (DayDTO dayDto: ddw.getDayDtos()) {
-                    if (dayDto.getCashInflowReceivables() != null && checkDates(dayDto.getEventDate(), dt.getEventDate())) {
-                        for (CashInflowReceivablesDTO cir1: dayDto.getCashInflowReceivables()) {
-                            if (cir1.getTargetAmt() != null && cir1.getColorCode().equalsIgnoreCase("Y")) {
-                                dayDueARs = dayDueARs + cir1.getTargetAmt();
-                            }
-                        }
-                        break;
-                    }
-                }
-            }
-            dt.amtValue = dayDueARs + "";
-        }
-        // from recurring
-        for (DayDTO dt: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(6).getDayList()) {
-            dayDueARs = 0.0;
-            for (DayDTOWrapper ddw: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(1).getDayDTOWrappers()) {
-                for (DayDTO dayDto: ddw.getDayDtos()) {
-                    if (dayDto.getCashInflowReceivables() != null && checkDates(dayDto.getEventDate(), dt.getEventDate())) {
-                        for (CashInflowReceivablesDTO cir1: dayDto.getCashInflowReceivables()) {
-                            if (cir1.getTargetAmt() != null && cir1.getColorCode().equalsIgnoreCase("Y")) {
-                                dayDueARs = dayDueARs + cir1.getTargetAmt();
-                            }
-                        }
-                        break;
-                    }
-                }
-            }
-            dayDueARs = dayDueARs + new Double(getAmount(cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(6).getDayList(), dt));
-            dt.amtValue = dayDueARs + "";
-        }
-
-        // Total CashInflows
-        Double totalCif = 0.0;
-        for (DayDTO dt: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(5).getDayList()) {
-            dt.amtValue = "0";
-            totalCif = new Double(getAmount(cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(2).getDayList(), dt)) +
-                new Double(getAmount(cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(3).getDayList(), dt));
-            dt.amtValue = totalCif + "";
-        }
-
-        // Cash collection for Accounts Receivable
-        Double cashARs = 0.0;
-        for (DayDTO dt: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(3).getDayList()) {
-            dt.amtValue = "0";
-            cashARs = 0.0;
-            for (DayDTOWrapper ddw: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(0).getDayDTOWrappers()) {
-                for (DayDTO dayDto: ddw.getDayDtos()) {
-                    if (dayDto.getCashInflowReceivables() != null && checkDates(dayDto.getEventDate(), dt.getEventDate())) {
-                        for (CashInflowReceivablesDTO cir1: dayDto.getCashInflowReceivables()) {
-                            if (cir1.getPaidAmt() != null && (cir1.getColorCode().equalsIgnoreCase("W") || cir1.getColorCode().equalsIgnoreCase("R"))) {
-                                cashARs = cashARs + cir1.getPaidAmt();
-                            }
-                        }
-                        break;
-                    }
-                }
-            }
-            dt.amtValue = cashARs + "";
-        }
-        for (DayDTO dt: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(3).getDayList()) {
-            cashARs = 0.0;
-            for (DayDTOWrapper ddw: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(1).getDayDTOWrappers()) {
-                for (DayDTO dayDto: ddw.getDayDtos()) {
-                    if (dayDto.getCashInflowReceivables() != null && checkDates(dayDto.getEventDate(), dt.getEventDate())) {
-                        for (CashInflowReceivablesDTO cir1: dayDto.getCashInflowReceivables()) {
-                            if (cir1.getPaidAmt() != null && (cir1.getColorCode().equalsIgnoreCase("W") || cir1.getColorCode().equalsIgnoreCase("R"))) {
-                                cashARs = cashARs + cir1.getPaidAmt();
-                            }
-                        }
-                        break;
-                    }
-                }
-            }
-            cashARs = cashARs + new Double(getAmount(cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(3).getDayList(), dt));
-            dt.amtValue = cashARs + "";
-        }
-
-        // Total Accounts Receivable
-        // start with the prev total acct receivables
-        Double totalARs = totalCarryForwardAR;
-        for (DayDTO dt: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(4).getDayList()) {
-            dt.amtValue = "0";
-            for (DayDTOWrapper ddw: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(0).getDayDTOWrappers()) {
-                for (DayDTO dayDto: ddw.getDayDtos()) {
-                    if (dayDto.getCashInflowReceivables() != null && checkDates(dayDto.getEventDate(), dt.getEventDate())) {
-                        for (CashInflowReceivablesDTO cir1: dayDto.getCashInflowReceivables()) {
-                            if (cir1.getReceivableAmt() != null && cir1.getColorCode().equalsIgnoreCase("G")) {
-                                totalARs = totalARs + cir1.getReceivableAmt();
-                            }
-                        }
-                        break;
-                    }
-                }
-            }
-            totalARs = totalARs - new Double(getAmount(cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(3).getDayList(), dt));
-            dt.amtValue = totalARs + "";
-        }
-
-        // get cash collection for sales .. salescashamt for each date for all products and stored in the array of cash inflow totals
-        Double totalCashCollection = 0.0;
-        for (DayDTO dt: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(2).getDayList()) {
-            dt.amtValue = "0";
-            totalCashCollection = 0.0;
-            for (CashInflowWrapperDTO ciw: cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(0).getCashInflowWrappers()){
-                if (ciw.getCashInflowData().getSalesDate() != null && checkDates(ciw.getCashInflowData().getSalesDate(), dt.getEventDate())) {
-                    totalCashCollection = totalCashCollection + ciw.getCashInflowData().getSalesCashAmount();
-                    continue;
-                }
-            }
-            dt.amtValue = totalCashCollection + "";
-        }
-    }
-
-    public void updateARTotals(CashInflowMasterWrapperDTO cashInflowMasterWrapperDTO){
+    public void updateARTotals(CashInflowMasterWrapperDTO cashInflowMasterWrapperDTO) {
         //get all sales date and receivable dates
         //and find out the earliest date among that and start updating the totals from that by getting cashinflow data including the existing totals
         //and overwrite the totals with the new total calculation and save the totals alone. (yet to write the method for that)
         List<LocalDate> salesDates = new ArrayList<LocalDate>();
         //if its single record and then check for changed flag in any of the date fields, the add that date to the list
-        for (CashbudgetWrapperDTO cashbudgetWrapperDTO: cashInflowMasterWrapperDTO.getCashbudgetWrappers()) {
+        for (CashbudgetWrapperDTO cashbudgetWrapperDTO : cashInflowMasterWrapperDTO.getCashbudgetWrappers()) {
             if (cashbudgetWrapperDTO != null && cashbudgetWrapperDTO.getCashInflowWrappers() != null) {
                 for (CashInflowWrapperDTO cashInflowWrapperDTO : cashbudgetWrapperDTO.getCashInflowWrappers()) {
                     if (cashInflowWrapperDTO.getCashInflowData().getSalesDate() != null) {
@@ -2001,6 +1506,10 @@ public class CashBudgetService {
                 }
             }
         }
+        updateTotalsWithDates(salesDates);
+    }
+
+    public void updateTotalsWithDates(List<LocalDate> salesDates) {
         if(salesDates != null && salesDates.size() > 1) {
             Collections.sort(salesDates);
         }
@@ -2008,35 +1517,79 @@ public class CashBudgetService {
             log.debug("date ...."+localDate);
         }
         LocalDate startDate = salesDates.get(0);
+        //get one date prior to get the total ARs and sum of net missed ARs
+        startDate = startDate.minusDays(1);
         LocalDate endDate = salesDates.get(salesDates.size() - 1);
-        cashInflowMasterWrapperDTO = null;
         log.debug("StartDate:"+startDate);
         log.debug("endDate:"+endDate);
-        while (startDate.compareTo(endDate) <= 0) {
-            log.debug("getting for cashinflowdata for "+startDate);
-            // cashInflowMasterWrapperDTO = getCashInflowData(startDate, "current");
-            List<DayDTO> dayDTOS = customUserService.getDayList(startDate);
-            LocalDate stDate1 = dayDTOS.get(0).getEventDate();
-            LocalDate endDate1 = dayDTOS.get(dayDTOS.size() - 1).getEventDate();
-            List<CashInflowReceivablesDTO> cashInflowReceivablesDTOList = getCashInflowReceivablesForTheGivenPeriod(stDate1,endDate1);
-            List<CashInflowTotalsDTO> cashInflowTotalsDTOList = getCashInflowTotalsForTheGivenPeriod(stDate1,endDate1);
-            if( cashInflowMasterWrapperDTO != null) {
-                recalculateARTotals(cashInflowMasterWrapperDTO);
+        //get last date from the current totals for this company .. and if that is the last then take that as the end date
+        // or treat the current endDate is the final one
+        CashInflowTotals cashInflowTotals = customCashInflowTotalsRepository.findTotalsByMaxIdAndCompanyInfo(customUserService.getLoggedInCompanyInfo().getId());
+        log.debug("latest cashinflowtotals::"+cashInflowTotals);
+        LocalDate currentEndDate = null;
+        if(cashInflowTotals != null) {
+            currentEndDate = cashInflowTotals.getCashInflowTotalDate();
+            log.debug("currentEndDate:"+currentEndDate);
+            if(currentEndDate.isAfter(endDate)) {
+                endDate = currentEndDate;
             }
-            log.debug("going to save totals ...");
-            saveOrUpdateARTotals(cashInflowMasterWrapperDTO);
-            log.debug("save totals done ...");
-            startDate = startDate.plusMonths(1);
-            log.debug("StartDate:"+startDate);
+            log.debug("endDate1:"+endDate);
         }
+
+        List<CashInflowReceivablesDTO> cashInflowReceivablesDTOList = getCashInflowReceivablesForTheGivenPeriod(startDate,endDate);
+        List<CashInflowTotalsDTO> cashInflowTotalsDTOList = getCashInflowTotalsForTheGivenPeriod(startDate,endDate);
+        log.debug("cashInflowReceivablesDTOList:::"+cashInflowReceivablesDTOList);
+        log.debug("cashInflowTotalsDTOList:::"+cashInflowTotalsDTOList);
+        if( cashInflowReceivablesDTOList != null && cashInflowReceivablesDTOList.size() > 0) {
+            checkAndFillDateEntriesInCashInflowTotals(cashInflowTotalsDTOList,startDate,endDate);
+        }
+        recalculateARTotals(cashInflowTotalsDTOList, cashInflowReceivablesDTOList);
+    }
+
+    private void checkAndFillDateEntriesInCashInflowTotals(List<CashInflowTotalsDTO> cashInflowTotalsDTOList, LocalDate startDate, LocalDate endDate) {
+        List<CashInflowTotalsDTO> copyCashInflowTotalsList = (List<CashInflowTotalsDTO>)CustomDeepCopy.copy(cashInflowTotalsDTOList);
+        boolean found = false;
+        LocalDate newStartDate = startDate;
+        String strNewStartDate = "";
+        String strTotalDate = "";
+        while(endDate.compareTo(newStartDate) >= 0) {
+            found = false;
+            strNewStartDate = CustomUtil.getDateInFormat(newStartDate, CustomConstant.date_yyyy_MM_dd);
+            for (CashInflowTotalsDTO cashInflowTotalsDTO : copyCashInflowTotalsList) {
+                strTotalDate = CustomUtil.getDateInFormat(cashInflowTotalsDTO.getCashInflowTotalDate(), CustomConstant.date_yyyy_MM_dd);
+                //log.debug("strTotalDate::"+strTotalDate+"::strNewStartDate::"+strNewStartDate);
+                if (strTotalDate.equalsIgnoreCase(strNewStartDate)) {
+                    log.debug(newStartDate+" found in totals..");
+                    found = true;
+                    break;
+                }
+            }
+            if(!found){
+                log.debug("this date is not there in totals.. so adding.."+newStartDate);
+                //add an object to cashInflowdatalist with date
+                CashInflowTotalsDTO cashInflowTotalsDTO = getCashInflowTotalsWithZeros();
+                cashInflowTotalsDTO.setCashInflowTotalDate(newStartDate);
+                cashInflowTotalsDTO.setCompanyInfoId(customUserService.getLoggedInCompanyInfo().getId());
+                cashInflowTotalsDTOList.add(cashInflowTotalsDTO);
+            }
+            newStartDate = newStartDate.plusDays(1);
+        }
+        //add one more date with the last one so that it will be again without any receivables transactions
+        CashInflowTotalsDTO cashInflowTotalsDTO = getCashInflowTotalsWithZeros();
+        cashInflowTotalsDTO.setCashInflowTotalDate(newStartDate);
+        cashInflowTotalsDTO.setCompanyInfoId(customUserService.getLoggedInCompanyInfo().getId());
+        cashInflowTotalsDTOList.add(cashInflowTotalsDTO);
     }
 
     private List<CashInflowTotalsDTO> getCashInflowTotalsForTheGivenPeriod(LocalDate stDate1, LocalDate endDate1) {
-        return new ArrayList<>();
+        List<CashInflowTotals> cashInflowTotals = customCashInflowTotalsRepository.findByTotalDateAndCompanyInfo(customUserService.getLoggedInCompanyInfo().getId(),
+            stDate1,endDate1);
+        return cashInflowTotalsMapper.toDto(cashInflowTotals);
     }
 
     private List<CashInflowReceivablesDTO> getCashInflowReceivablesForTheGivenPeriod(LocalDate stDate1, LocalDate endDate1) {
-        return new ArrayList<>();
+        List<CashInflowReceivables> cashInflowReceivables = customCashInflowReceivablesRepository.getReceivablesWithinRange(customUserService.getLoggedInCompanyInfo().getId(), stDate1, endDate1);
+        return cashInflowReceivablesMapper.toDto(cashInflowReceivables);
     }
 
     private String getAmount(List<DayDTO> dayList, DayDTO targetDt) {
@@ -2199,9 +1752,12 @@ public class CashBudgetService {
             } else if ("G".equalsIgnoreCase(cashInflowReceivablesDTO.getColorCode())){
                 if(cashInflowData.getSalesCashAmount() != null) {
                     cashInflowReceivablesDTO.setReceivableAmt(cashInflowData.getSalesAmount() - cashInflowData.getSalesCashAmount());
+                    // if its G - put the cash received at sales here
+                    cashInflowReceivablesDTO.setReceivedAmt(cashInflowData.getSalesCashAmount());
                 }
                 else {
                     cashInflowReceivablesDTO.setReceivableAmt(cashInflowData.getSalesAmount());
+                    cashInflowReceivablesDTO.setReceivedAmt(0.0);
                 }
                 cashInflowReceivablesDTO.setSalesAmt(cashInflowData.getSalesAmount());
                 //for green both sales date and receivable date are same
