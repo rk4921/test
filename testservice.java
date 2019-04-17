@@ -71,100 +71,17 @@ public class CashBudgetService {
     CustomCashPayableDetailsRepository customCashPayableDetailsRepository;
     @Autowired
     CashInflowTotalsMapper cashInflowTotalsMapper;
+    @Autowired
+    RecurringCBEntriesMapper recurringCBEntriesMapper;
+    @Autowired
+    CashBatchRepository cashBatchRepository;
+    @Autowired
+    CashBudgetBatchMapper cashBudgetBatchMapper;
+    @Autowired
+    CashPartyRepository cashPartyRepository;
+    @Autowired
+    CashBudgetPartyMapper cashBudgetPartyMapper;
 
-    public void saveCashInflowReceivables_deprecated(CashbudgetWrapperDTO cashbudgetWrapperDTO, CashInflowWrapperDTO cashInflowWrapperDTO,
-                                          CashInflowData cashInflowData) {
-        //log.debug("cashbudgetWrapperDTO::"+cashbudgetWrapperDTO);
-        //log.debug("cashInflowWrapperDTO::"+cashInflowWrapperDTO);
-        //set cash inflow data id receivables and save it.
-        List<CashInflowReceivablesDTO> newList = new ArrayList<CashInflowReceivablesDTO>();
-        for(DayDTOWrapper dayDTOWrapper: cashbudgetWrapperDTO.getDayDTOWrappers()) {
-            if(cashInflowWrapperDTO.getCashInflowData().getEditId().equals(dayDTOWrapper.getEditId())) {
-                for (DayDTO dayDTO: dayDTOWrapper.getDayDtos()) {
-                    if(dayDTO.getCashInflowReceivables() != null){
-                        for (CashInflowReceivablesDTO cashInflowReceivablesDTO: dayDTO.getCashInflowReceivables()) {
-                            cashInflowReceivablesDTO.setCidId(cashInflowWrapperDTO.getCashInflowData().getId());
-                            cashInflowReceivablesDTO.setSalesDate(cashInflowWrapperDTO.getCashInflowData().getSalesDate());
-                            if(("W".equalsIgnoreCase(cashInflowReceivablesDTO.getColorCode()) ||
-                                ("R".equalsIgnoreCase(cashInflowReceivablesDTO.getColorCode()))) &&
-                            //if("R".equalsIgnoreCase(cashInflowReceivablesDTO.getColorCode()) &&
-                                cashInflowReceivablesDTO.getReceivablePercent() == null) {
-                                log.debug("************not adding entry.."+cashInflowReceivablesDTO);
-                            }
-                            else{
-                                log.debug("receivableDate::"+cashInflowReceivablesDTO.getReceivableDate());
-                                log.debug("salesDate::"+cashInflowReceivablesDTO.getSalesDate());
-                                newList.add(cashInflowReceivablesDTO);
-                                log.debug("************adding entry.."+cashInflowReceivablesDTO);
-                                // CashInflowReceivables cashInflowReceivables = cashInflowReceivablesMapper.toEntity(cashInflowReceivablesDTO);
-                                // always add a new one
-                                // cashInflowReceivables.setId(null);
-                                // customCashInflowReceivablesRepository.save(cashInflowReceivables);
-                                // save paidAmts if its yellow and range here
-                                // saveCashInflowReceivedAmts(cashInflowReceivablesDTO, cashInflowReceivables, cashInflowData);
-                                // cashInflowReceivablesDTO.setId(cashInflowReceivables.getId());
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        log.debug("receivables entry....."+newList);
-        if(newList.size() > 0) {
-            int count = 0;
-            for(CashInflowReceivablesDTO cashInflowReceivablesDTO: newList){
-                cashInflowReceivablesDTO.setEditId(count+"");
-                count++;
-            }
-            List<CashInflowReceivables> cashInflowReceivables = cashInflowReceivablesMapper.toEntity(newList);
-            for (CashInflowReceivables cashInflowReceivables1 : cashInflowReceivables) {
-                //for inserting new one
-                cashInflowReceivables1.setId(null);
-            }
-            customCashInflowReceivablesRepository.saveAll(cashInflowReceivables);
-            List<CashInflowReceivablesDTO> cashInflowReceivablesDTOS = cashInflowReceivablesMapper.toDto(cashInflowReceivables);
-            for(CashInflowReceivablesDTO cashInflowReceivablesDTO: cashInflowReceivablesDTOS){
-                cashInflowReceivablesDTO.setPaidAmts(getPaidAmts(cashInflowReceivablesDTO.getEditId(), newList));
-            }
-            // save paidAmts if its yellow and range here
-            saveCashInflowReceivedAmts(cashInflowReceivablesDTOS, cashInflowData);
-            if (!("R".equalsIgnoreCase(cashInflowData.getInflowType()))) {
-                saveCashInflowRange(newList, cashInflowData);
-            }
-        }
-
-        //save out of range receivables for that sale
-        for (CashInflowWrapperDTO cashInflowWrapperDTO1 : cashbudgetWrapperDTO.getCashInflowWrappers()) {
-            log.debug("cashInflowWrapperDTO1::"+cashInflowWrapperDTO1);
-            //log.debug("cashInflowData::"+cashInflowData);
-            //log.debug("cashInflowWrapperDTO::"+cashInflowWrapperDTO);
-            log.debug("cashInflowWrapperDTO1.getCashInflowData().getEditId()::"+cashInflowWrapperDTO1.getCashInflowData().getEditId());
-            log.debug("cashInflowWrapperDTO.getCashInflowData().getEditId()::"+cashInflowWrapperDTO.getCashInflowData().getEditId());
-            if (cashInflowWrapperDTO1.getOutOfRangeRbls() != null &&
-                cashInflowWrapperDTO1.getCashInflowData().getEditId().equals(cashInflowWrapperDTO.getCashInflowData().getEditId())) {
-                for (CashInflowReceivablesDTO cashInflowReceivablesDTO : cashInflowWrapperDTO1.getOutOfRangeRbls()) {
-                    cashInflowReceivablesDTO.setCidId(cashInflowData.getId());
-                    cashInflowReceivablesDTO.setSalesDate(cashInflowWrapperDTO1.getCashInflowData().getSalesDate());
-                }
-                List<CashInflowReceivables> cashInflowReceivables = cashInflowReceivablesMapper.toEntity(cashInflowWrapperDTO1.getOutOfRangeRbls());
-                customCashInflowReceivablesRepository.saveAll(cashInflowReceivables);
-                cashInflowWrapperDTO1.setOutOfRangeRbls(cashInflowReceivablesMapper.toDto(cashInflowReceivables));
-                if(!("R".equalsIgnoreCase(cashInflowData.getInflowType()))){
-                    saveCashInflowRange(cashInflowWrapperDTO1.getOutOfRangeRbls(), cashInflowData);
-                }
-
-            }
-        }
-    }
-
-    private List<KeyValueDTO> getPaidAmts(String editId, List<CashInflowReceivablesDTO> newList) {
-        for(CashInflowReceivablesDTO cashInflowReceivablesDTO: newList){
-            if(editId.equalsIgnoreCase(cashInflowReceivablesDTO.getEditId())){
-                return cashInflowReceivablesDTO.getPaidAmts();
-            }
-        }
-        return null;
-    }
 
     public void deleteCashInflowSubData(CashInflowData cashInflowData) {
         log.debug("going to delete ********************cashInflowData::"+cashInflowData);
@@ -202,30 +119,6 @@ public class CashBudgetService {
         }
     }
 
-    private void saveCashInflowReceivedAmts(List<CashInflowReceivablesDTO> cashInflowReceivablesDTOs, CashInflowData cashInflowData) {
-        log.debug("saveCashInflowReceivedAmts::cashInflowReceivablesDTOs:"+cashInflowReceivablesDTOs);
-        List<CashReceivableDetails> cashReceivableDetailsList = new ArrayList<CashReceivableDetails>();
-        for(CashInflowReceivablesDTO cashInflowReceivablesDTO: cashInflowReceivablesDTOs) {
-            // go through cash receivables for yellow color code and add the paid amts details
-            if ("Y".equalsIgnoreCase(cashInflowReceivablesDTO.getColorCode()) && cashInflowReceivablesDTO.getPaidAmts() != null
-                && cashInflowReceivablesDTO.getPaidAmts().size() > 0) {
-                for (KeyValueDTO keyValueDTO : cashInflowReceivablesDTO.getPaidAmts()) {
-                    CashReceivableDetails cashReceivableDetails = new CashReceivableDetails();
-                    cashReceivableDetails.setTrackId(keyValueDTO.getTrackId());
-                    cashReceivableDetails.setCid(cashInflowData);
-                    cashReceivableDetails.setCir(cashInflowReceivablesMapper.toEntity(cashInflowReceivablesDTO));
-                    cashReceivableDetails.setReceivedAmt(new Double(keyValueDTO.getValue()));
-                    cashReceivableDetails.setReceivedDate(keyValueDTO.getKey());
-                    cashReceivableDetailsList.add(cashReceivableDetails);
-                }
-            }
-        }
-        log.debug("saveCashInflowReceivedAmts::cashReceivableDetailsList:"+cashReceivableDetailsList);
-        if(cashReceivableDetailsList != null && cashReceivableDetailsList.size() > 0) {
-            customCashReceivableDetailsRepository.saveAll(cashReceivableDetailsList);
-        }
-    }
-
     public List<LocalDate> getRangeEntries(LocalDate salesDate, LocalDate receivableDate) {
         List<LocalDate> localDates = new ArrayList<LocalDate>();
         LocalDate nextdate1 = salesDate.plusMonths(1);
@@ -259,7 +152,7 @@ public class CashBudgetService {
         return recurringCBEntries;
     }
 
-    public CashInflowMasterWrapperDTO getCashInflowData(LocalDate localDate, String pageind, String calfreq) {
+    public CashInflowMasterWrapperDTO getCashInflowData(LocalDate localDate, String pageind, String calfreq, Long batchId, Long partyId) {
         CashInflowMasterWrapperDTO cashInflowMasterWrapperDTO = new CashInflowMasterWrapperDTO();
         CashInflowMaster cashInflowMaster = customCashInflowMasterRepository.findByCompanyInfo(customUserService.getLoggedInCompanyInfo());
         if(cashInflowMaster != null) {
@@ -271,6 +164,7 @@ public class CashBudgetService {
         List<DayDTO> dayDTOS = customUserService.getDayList(localDate);
         LocalDate stDate = dayDTOS.get(0).getEventDate();
         LocalDate endDate = dayDTOS.get(dayDTOS.size() - 1).getEventDate();
+        log.debug("going to get cif for "+stDate+"::endDate::"+endDate);
         List<CashInflowData> cashInflowDataList = customCashInflowDataRepository.findBySalesDateAndCompanyInfo(customUserService.getLoggedInCompanyInfo().getId(),stDate,endDate);
         List<CashInflowDataDTO> cashInflowDataDTOS = cashInflowDataMapper.toDto(cashInflowDataList);
         // add out of range cash inflow datas
@@ -278,19 +172,27 @@ public class CashBudgetService {
         // add range cashinflows to note that there are some AR expecting in the future months
         addRangeCashInflows(cashInflowDataDTOS, stDate,endDate);
         log.debug("cashinflowdatas before adding recurring.."+cashInflowDataDTOS);
+        /* recurring will come part of cashinflow and cash receivables records.. while inserting
+        recurring we are going to create that many cashinflow and cash receivables
         if(!("delete".equalsIgnoreCase(pageind))){
             addCashInflowRecurringMasterEntries(cashInflowDataDTOS, stDate);
         }
+        */
+        List<CashBudgetBatch> cashBudgetBatches = cashBatchRepository.findByCompanyInfo(customUserService.getLoggedInCompanyInfo());
+        List<CashBudgetParty> cashBudgetParties = cashPartyRepository.findByCompanyInfo(customUserService.getLoggedInCompanyInfo());
         List<CashbudgetWrapperDTO> cashbudgetWrapperDTOs = new ArrayList<CashbudgetWrapperDTO>();
         CashbudgetWrapperDTO cashbudgetWrapperDTO = null;
         List<DayDTOWrapper> dayDTOWrappers1 = new ArrayList<DayDTOWrapper>();
         List<CashInflowWrapperDTO> cashInflowWrapperDTOS1 = new ArrayList<CashInflowWrapperDTO>();
         // first add sales entries
         DayDTOWrapper dayDTOWrapper = null;
+        List<CashInflowDataDTO> filteredCifDtos = getFilteredCifDtos(cashInflowDataDTOS,batchId,partyId);
         // add out of range receivables and their corresponding sales entry
         // get receivables for the given date period and get the cash inflow data for that receivable and add to the cashinflow data list
         int editId = 0;
-        for(CashInflowDataDTO cashInflowDataDTO: cashInflowDataDTOS) {
+        for(CashInflowDataDTO cashInflowDataDTO: filteredCifDtos) {
+            fillBatchName(cashBudgetBatches,cashInflowDataDTO);
+            fillPartyName(cashBudgetParties,cashInflowDataDTO);
             if(!("R".equalsIgnoreCase(cashInflowDataDTO.getInflowType()))){
                 CashInflowWrapperDTO cashInflowWrapperDTO = new CashInflowWrapperDTO();
                 cashInflowDataDTO.setEditId("top"+editId);
@@ -325,7 +227,7 @@ public class CashBudgetService {
         List<CashInflowWrapperDTO> cashInflowWrapperDTOS2 = new ArrayList<CashInflowWrapperDTO>();
         // then add recurring entries
         editId = 0;
-        for(CashInflowDataDTO cashInflowDataDTO: cashInflowDataDTOS) {
+        for(CashInflowDataDTO cashInflowDataDTO: filteredCifDtos) {
             if("R".equalsIgnoreCase(cashInflowDataDTO.getInflowType())){
                 CashInflowWrapperDTO cashInflowWrapperDTO = new CashInflowWrapperDTO();
                 cashInflowDataDTO.setEditId("down"+editId);
@@ -340,13 +242,13 @@ public class CashBudgetService {
                 }
                 // if there are no cashInflowReceivables and if the cashinflow data has credit period and sales percent - create receivable with yellow color and add to the list
                 // this will be for adding from the master recurring entries
-                if(!(cashInflowReceivablesDTOList != null && cashInflowReceivablesDTOList.size() > 0)
-                    && cashInflowDataDTO.getCreditPeriod() != null
-                    && cashInflowDataDTO.getCreditSalesPercent() != null){
-                    cashInflowReceivablesDTOList = new ArrayList<CashInflowReceivablesDTO>();
-                    addReceivableForRecurringEntries(cashInflowDataDTO, cashInflowReceivablesDTOList, stDate);
-                }
-                //log.debug("after recurring...."+cashInflowReceivablesDTOList);
+                //if(!(cashInflowReceivablesDTOList != null && cashInflowReceivablesDTOList.size() > 0)
+                //    && cashInflowDataDTO.getCreditPeriod() != null
+                //    && cashInflowDataDTO.getCreditSalesPercent() != null){
+                //    cashInflowReceivablesDTOList = new ArrayList<CashInflowReceivablesDTO>();
+                //    addReceivableForRecurringEntries(cashInflowDataDTO, cashInflowReceivablesDTOList, stDate);
+                //}
+                log.debug("after recurring...."+cashInflowReceivablesDTOList);
                 //addTargetReceibables(cashInflowWrapperDTO, cashInflowReceivablesDTOList);
                 //log.debug(cashInflowDataDTO.getId()+"::R::cashReceivablesList:"+cashInflowReceivablesDTOList);
                 cashInflowWrapperDTO.setCashInflowRbls(cashInflowReceivablesDTOList);
@@ -368,11 +270,11 @@ public class CashBudgetService {
         //get the last day of prev months totals
         LocalDate prevDate = stDate.minusDays(1);
         log.debug(customUserService.getLoggedInCompanyInfo().getId()+"prevDate::"+prevDate);
-        CashInflowTotals cashInflowTotals1 = customCashInflowTotalsRepository.findTotalsByDateAndCompanyInfo(customUserService.getLoggedInCompanyInfo().getId(),prevDate);
+        CashInflowTotals cashInflowTotals1 = customCashInflowTotalsRepository.findTotalsByDateAndCompanyInfo(customUserService.getLoggedInCompanyInfo().getId(),prevDate,batchId,partyId);
         CashInflowTotalsDTO prevCashInflowTotals = null;
         // then totals ...
         log.debug("endDate from "+stDate+"::"+endDate);
-        List<CashInflowTotals> cashInflowTotals = customCashInflowTotalsRepository.findByTotalDateAndCompanyInfo(customUserService.getLoggedInCompanyInfo().getId(),stDate,endDate);
+        List<CashInflowTotals> cashInflowTotals = customCashInflowTotalsRepository.findByTotalDateAndCompanyInfo(customUserService.getLoggedInCompanyInfo().getId(),stDate,endDate,batchId,partyId);
         Double carryForwardAR = 0.0;
         if(cashInflowTotals1 != null && cashInflowTotals1.getId() != null) {
             carryForwardAR = cashInflowTotals1.getTotalAR();
@@ -381,8 +283,9 @@ public class CashBudgetService {
         }
         else {
             //get the last record of totals
-            cashInflowTotals1 = customCashInflowTotalsRepository.findTotalsByMaxIdAndCompanyInfo(customUserService.getLoggedInCompanyInfo().getId());
-            if(cashInflowTotals1 != null) {
+            cashInflowTotals1 = customCashInflowTotalsRepository.findTotalsByMaxIdAndCompanyInfo(customUserService.getLoggedInCompanyInfo().getId(),batchId,partyId);
+            //previous date should be after the max date - then consider the carry forward, otherwise 0
+            if(cashInflowTotals1 != null && prevDate.compareTo(cashInflowTotals1.getCashInflowTotalDate()) >= 0) {
                 carryForwardAR = cashInflowTotals1.getTotalAR();
                 prevCashInflowTotals = cashInflowTotalsMapper.toDto(cashInflowTotals1);
                 log.debug("carry forward from latest.."+carryForwardAR);
@@ -391,22 +294,34 @@ public class CashBudgetService {
 
         if(cashInflowTotals != null && cashInflowTotals.size() > 0) {
             List<CashInflowTotalsDTO> cashInflowTotalsDTOList = cashInflowTotalsMapper.toDto(cashInflowTotals);
-            //carryForwardAR = cashInflowTotals.get(cashInflowTotals.size() - 1).getTotalAR();
-            log.debug("there is no carryforward as there are no prev entries only current month is there"+cashInflowTotals);
-            //for(int i=2;i<=8;i++) {
-                List<DayDTO> dayDTOS1 = customUserService.getDayList(localDate);
-                for (DayDTO dayDTO : dayDTOS1) {
-                    log.debug("setting totals for "+dayDTO.getEventDate());
-                    setCashInflowTotalValue(cashInflowTotalsDTOList, dayDTO);
-                    //get the last total record
-                    if (dayDTO.getCashInflowTotals() == null) {
+            List<DayDTO> dayDTOS1 = customUserService.getDayList(localDate);
+            LocalDate lastDate = null;
+            for (DayDTO dayDTO : dayDTOS1) {
+                log.debug("setting totals for "+dayDTO.getEventDate());
+                setCashInflowTotalValue(cashInflowTotalsDTOList, dayDTO);
+                //get the last total record
+                if (dayDTO.getCashInflowTotals() == null) {
+                    lastDate = cashInflowTotalsDTOList.get(cashInflowTotalsDTOList.size() - 1).getCashInflowTotalDate();
+                    if(dayDTO.getEventDate().compareTo(lastDate) >= 0) {
+                        log.debug("no totals at the end of the months ...");
+                        //these records comes after the existing totals
                         dayDTO.setCashInflowTotals(cashInflowTotalsDTOList.get(cashInflowTotalsDTOList.size() - 1));
                     }
+                    else if(prevCashInflowTotals != null) {
+                        log.debug("no totals start of the months ...");
+                        //these records comes before the existing totals
+                        dayDTO.setCashInflowTotals(prevCashInflowTotals);
+                    }
+                    else{
+                        log.debug("no totals start of the months and prev totals too");
+                        //else shows it as zero
+                        dayDTO.setCashInflowTotals(getCashInflowTotalsWithZeros());
+                    }
                 }
-                cashbudgetWrapperDTO = new CashbudgetWrapperDTO();
-                cashbudgetWrapperDTO.setDayList(dayDTOS1);
-                cashbudgetWrapperDTOs.add(cashbudgetWrapperDTO);
-            //}
+            }
+            cashbudgetWrapperDTO = new CashbudgetWrapperDTO();
+            cashbudgetWrapperDTO.setDayList(dayDTOS1);
+            cashbudgetWrapperDTOs.add(cashbudgetWrapperDTO);
         }
         else if(prevCashInflowTotals != null) {
             // if there are no records for the current period repeat the last record of the prev period
@@ -436,6 +351,57 @@ public class CashBudgetService {
         cashInflowMasterWrapperDTO.setCarryForwardAR(carryForwardAR);
         cashInflowMasterWrapperDTO.setCashbudgetWrappers(cashbudgetWrapperDTOs);
         return cashInflowMasterWrapperDTO;
+    }
+
+    private List<CashInflowDataDTO> getFilteredCifDtos(List<CashInflowDataDTO> cashInflowDataDTOS, Long batchId, Long partyId) {
+        List<CashInflowDataDTO> filteredList = new ArrayList<CashInflowDataDTO>();
+        log.debug("batchId:"+batchId+"::partyId::"+partyId);
+        if(batchId == 0 && partyId == 0){
+            return cashInflowDataDTOS;
+        }
+        else{
+            if(batchId != 0 && partyId != 0){
+                for(CashInflowDataDTO cashInflowDataDTO: cashInflowDataDTOS){
+                    if(cashInflowDataDTO.getCbBatchId().equals(batchId) && cashInflowDataDTO.getPartyId().equals(partyId)){
+                        filteredList.add(cashInflowDataDTO);
+                    }
+                }
+            }
+            else if(batchId != 0){
+                for(CashInflowDataDTO cashInflowDataDTO: cashInflowDataDTOS){
+                    if(cashInflowDataDTO.getCbBatchId().equals(batchId)){
+                        filteredList.add(cashInflowDataDTO);
+                    }
+                }
+            }
+            else if(partyId != 0){
+                for(CashInflowDataDTO cashInflowDataDTO: cashInflowDataDTOS){
+                    if(cashInflowDataDTO.getPartyId().equals(partyId)){
+                        filteredList.add(cashInflowDataDTO);
+                    }
+                }
+            }
+            log.debug("returing filtered list "+filteredList);
+            return filteredList;
+        }
+    }
+
+    private void fillPartyName(List<CashBudgetParty> cashBudgetParties, CashInflowDataDTO cashInflowDataDTO) {
+        for(CashBudgetParty cashBudgetParty: cashBudgetParties){
+            if(cashInflowDataDTO.getPartyId() != null && cashBudgetParty.getId().equals(cashInflowDataDTO.getPartyId())){
+                cashInflowDataDTO.setPartyName(cashBudgetParty.getName());
+                return;
+            }
+        }
+    }
+
+    private void fillBatchName(List<CashBudgetBatch> cashBudgetBatches, CashInflowDataDTO cashInflowDataDTO){
+        for(CashBudgetBatch cashBudgetBatch: cashBudgetBatches){
+            if(cashInflowDataDTO.getCbBatchId() != null && cashInflowDataDTO.getCbBatchId().equals(cashBudgetBatch.getId())){
+                cashInflowDataDTO.setBatchName(cashBudgetBatch.getName());
+                return;
+            }
+        }
     }
 
     private CashInflowTotalsDTO getCashInflowTotalsWithZeros() {
@@ -1279,13 +1245,18 @@ public class CashBudgetService {
     @Transactional(readOnly = false,rollbackFor = Exception.class)
     public void deleteCashInflowData(Long id) {
         CashInflowData cashInflowData = customCashInflowDataRepository.getOne(id);
+        deleteCifData(cashInflowData);
+        List<LocalDate> salesDate = new ArrayList<LocalDate>();
+        salesDate.add(cashInflowData.getSalesDate());
+        // To do : pass the batch id and party id
+        updateTotalsWithDates(salesDate, 0L,0L);
+    }
+
+    public void deleteCifData(CashInflowData cashInflowData) {
         customCashReceivableDetailsRepository.deleteByCid(cashInflowData);
         customCashInflowReceivablesRepository.deleteByCid(cashInflowData);
         customCashInflowRangeRepository.deleteByCid(cashInflowData);
         customCashInflowDataRepository.delete(cashInflowData);
-        List<LocalDate> salesDate = new ArrayList<LocalDate>();
-        salesDate.add(cashInflowData.getSalesDate());
-        updateTotalsWithDates(salesDate);
     }
 
     @Transactional(readOnly = false,rollbackFor = Exception.class)
@@ -1309,13 +1280,25 @@ public class CashBudgetService {
         cashInflowReceivablesDTO1.setSalesDate(cashInflowReceivablesDTO.getSalesDate());
         cashInflowReceivablesDTO1.setReceivableDate(cashInflowReceivablesDTO.getSalesDate().plusDays((new Long(cashInflowReceivablesDTO.getCreditPeriod())).longValue()));
         cashInflowReceivablesDTO1.setColorCode("Y");
+        cashInflowReceivablesDTO1.setEditId("Y"+CustomUtil.getUniqueString());
         cashInflowReceivablesDTOS.add(cashInflowReceivablesDTO1);
+        CashInflowReceivablesDTO cashInflowReceivablesDTO2 = new CashInflowReceivablesDTO();
+        //cashInflowReceivablesDTO2.setCreditPeriod(cashInflowReceivablesDTO.getCreditPeriod());
+        //cashInflowReceivablesDTO2.setReceivablePercent(cashInflowReceivablesDTO.getReceivablePercent());
+        //cashInflowReceivablesDTO2.setReceivableAmt(cashInflowReceivablesDTO.getReceivableAmt());
+        //cashInflowReceivablesDTO2.setSalesDate(cashInflowReceivablesDTO.getSalesDate());
+        //cashInflowReceivablesDTO2.setReceivableDate(cashInflowReceivablesDTO.getSalesDate().plusDays((new Long(cashInflowReceivablesDTO.getCreditPeriod())).longValue()));
+        cashInflowReceivablesDTO2.setColorCode("W");
+        cashInflowReceivablesDTO2.setEditId("WR"+CustomUtil.getUniqueString());
+        cashInflowReceivablesDTO2.setParId(cashInflowReceivablesDTO1.getEditId());
+        cashInflowReceivablesDTOS.add(cashInflowReceivablesDTO2);
         return cashInflowReceivablesDTOS;
     }
     @Transactional(readOnly = false,rollbackFor = Exception.class)
     public void uploadCashInflows(List<CashInflowWrapperDTO> cashInflowWrapperDTOS) {
         //save cashinflow data
         //save receivables data - inside loop for each cash inflow data
+        /*
         String editId = null;
         for (CashInflowWrapperDTO cashInflowWrapperDTO : cashInflowWrapperDTOS) {
             log.debug("salesDate::"+cashInflowWrapperDTO.getCashInflowData().getSalesDate());
@@ -1328,6 +1311,10 @@ public class CashBudgetService {
             cashInflowWrapperDTO.getCashInflowData().setEditId(editId);
             uploadCashInflowReceivables(cashInflowWrapperDTO, cashInflowData);
         }
+        */
+        saveOrUpdateCashBudget(cashInflowWrapperDTOS);
+        // To do : pass the cashinflowrapperdtos according to batch id and party id
+        updateARTotals(cashInflowWrapperDTOS, null,0L,0L);
     }
 
     private void uploadCashInflowReceivables(CashInflowWrapperDTO cashInflowWrapperDTO, CashInflowData cashInflowData) {
@@ -1394,7 +1381,10 @@ public class CashBudgetService {
      * the get all totals from start date to the end date and update all totals by recalculating each and save to the DB together
      * @param
      */
-    public void recalculateARTotals(List<CashInflowTotalsDTO> cashInflowTotalsDTOList, List<CashInflowReceivablesDTO> cashInflowReceivablesDTOList) {
+    public void recalculateARTotals(List<CashInflowTotalsDTO> cashInflowTotalsDTOList,
+                                    List<CashInflowReceivablesDTO> cashInflowReceivablesDTOList,
+                                    Long batchId,
+                                    Long partyId) {
         Double cashCollectionsForSales = 0.0;
         Double cashCollectionsAR = 0.0;
         Double totalAR = 0.0;
@@ -1481,35 +1471,56 @@ public class CashBudgetService {
             cashInflowTotalsDTO.setNetMissedCollection(netMissedCollection);
             cashInflowTotalsDTO.setSumOfDueARs(sumOfReceivables);
         }
+        //just set the batch id and party id before saving .. so batch wise records
+        for(CashInflowTotalsDTO cashInflowTotalsDTO: cashInflowTotalsDTOList){
+            cashInflowTotalsDTO.setBatchId(batchId);
+            cashInflowTotalsDTO.setPartyId(partyId);
+        }
         customCashInflowTotalsRepository.saveAll(cashInflowTotalsMapper.toEntity(cashInflowTotalsDTOList));
     }
 
-
-    public void updateARTotals(CashInflowMasterWrapperDTO cashInflowMasterWrapperDTO) {
+    /**
+     *
+     * second arg is the event that date has been changed in the UI, its getting from db before the update
+     * this needs to be tracked to update the saved totals accordingly
+     * @param cashInflowWrapperDTOS
+     * @param prevEventDate
+     */
+    public void updateARTotals(List<CashInflowWrapperDTO> cashInflowWrapperDTOS,
+                               LocalDate prevEventDate,
+                               Long batchId,
+                               Long partyId) {
         //get all sales date and receivable dates
         //and find out the earliest date among that and start updating the totals from that by getting cashinflow data including the existing totals
         //and overwrite the totals with the new total calculation and save the totals alone. (yet to write the method for that)
         List<LocalDate> salesDates = new ArrayList<LocalDate>();
+        if(prevEventDate != null) {
+            salesDates.add(prevEventDate);
+        }
         //if its single record and then check for changed flag in any of the date fields, the add that date to the list
-        for (CashbudgetWrapperDTO cashbudgetWrapperDTO : cashInflowMasterWrapperDTO.getCashbudgetWrappers()) {
-            if (cashbudgetWrapperDTO != null && cashbudgetWrapperDTO.getCashInflowWrappers() != null) {
-                for (CashInflowWrapperDTO cashInflowWrapperDTO : cashbudgetWrapperDTO.getCashInflowWrappers()) {
+        //for (CashbudgetWrapperDTO cashbudgetWrapperDTO : cashInflowMasterWrapperDTO.getCashbudgetWrappers()) {
+            //if (cashbudgetWrapperDTO != null && cashbudgetWrapperDTO.getCashInflowWrappers() != null) {
+                for (CashInflowWrapperDTO cashInflowWrapperDTO : cashInflowWrapperDTOS) {
                     if (cashInflowWrapperDTO.getCashInflowData().getSalesDate() != null) {
                         salesDates.add(cashInflowWrapperDTO.getCashInflowData().getSalesDate());
                     }
                     //for each cashinflow add the receivable dates
                     for (CashInflowReceivablesDTO cashInflowReceivablesDTO : cashInflowWrapperDTO.getCashInflowRbls()) {
+                        //
+                        if (cashInflowReceivablesDTO.getReceivableDate() != null && (cashInflowReceivablesDTO.getColorCode().equalsIgnoreCase("Y"))) {
+                            salesDates.add(cashInflowReceivablesDTO.getReceivableDate());
+                        }
                         if (cashInflowReceivablesDTO.getReceivedDate() != null && (cashInflowReceivablesDTO.getColorCode().equalsIgnoreCase("W") || cashInflowReceivablesDTO.getColorCode().equalsIgnoreCase("R"))) {
                             salesDates.add(cashInflowReceivablesDTO.getReceivedDate());
                         }
                     }
                 }
-            }
-        }
-        updateTotalsWithDates(salesDates);
+            //}
+        //}
+        updateTotalsWithDates(salesDates, batchId, partyId);
     }
 
-    public void updateTotalsWithDates(List<LocalDate> salesDates) {
+    public void updateTotalsWithDates(List<LocalDate> salesDates, Long batchId, Long partyId) {
         if(salesDates != null && salesDates.size() > 1) {
             Collections.sort(salesDates);
         }
@@ -1524,7 +1535,7 @@ public class CashBudgetService {
         log.debug("endDate:"+endDate);
         //get last date from the current totals for this company .. and if that is the last then take that as the end date
         // or treat the current endDate is the final one
-        CashInflowTotals cashInflowTotals = customCashInflowTotalsRepository.findTotalsByMaxIdAndCompanyInfo(customUserService.getLoggedInCompanyInfo().getId());
+        CashInflowTotals cashInflowTotals = customCashInflowTotalsRepository.findTotalsByMaxIdAndCompanyInfo(customUserService.getLoggedInCompanyInfo().getId(), batchId, partyId);
         log.debug("latest cashinflowtotals::"+cashInflowTotals);
         LocalDate currentEndDate = null;
         if(cashInflowTotals != null) {
@@ -1537,13 +1548,13 @@ public class CashBudgetService {
         }
 
         List<CashInflowReceivablesDTO> cashInflowReceivablesDTOList = getCashInflowReceivablesForTheGivenPeriod(startDate,endDate);
-        List<CashInflowTotalsDTO> cashInflowTotalsDTOList = getCashInflowTotalsForTheGivenPeriod(startDate,endDate);
+        List<CashInflowTotalsDTO> cashInflowTotalsDTOList = getCashInflowTotalsForTheGivenPeriod(startDate,endDate, batchId, partyId);
         log.debug("cashInflowReceivablesDTOList:::"+cashInflowReceivablesDTOList);
         log.debug("cashInflowTotalsDTOList:::"+cashInflowTotalsDTOList);
         if( cashInflowReceivablesDTOList != null && cashInflowReceivablesDTOList.size() > 0) {
             checkAndFillDateEntriesInCashInflowTotals(cashInflowTotalsDTOList,startDate,endDate);
         }
-        recalculateARTotals(cashInflowTotalsDTOList, cashInflowReceivablesDTOList);
+        recalculateARTotals(cashInflowTotalsDTOList, cashInflowReceivablesDTOList, batchId, partyId);
     }
 
     private void checkAndFillDateEntriesInCashInflowTotals(List<CashInflowTotalsDTO> cashInflowTotalsDTOList, LocalDate startDate, LocalDate endDate) {
@@ -1581,9 +1592,9 @@ public class CashBudgetService {
         cashInflowTotalsDTOList.add(cashInflowTotalsDTO);
     }
 
-    private List<CashInflowTotalsDTO> getCashInflowTotalsForTheGivenPeriod(LocalDate stDate1, LocalDate endDate1) {
+    private List<CashInflowTotalsDTO> getCashInflowTotalsForTheGivenPeriod(LocalDate stDate1, LocalDate endDate1, Long batchId, Long partyId) {
         List<CashInflowTotals> cashInflowTotals = customCashInflowTotalsRepository.findByTotalDateAndCompanyInfo(customUserService.getLoggedInCompanyInfo().getId(),
-            stDate1,endDate1);
+            stDate1,endDate1, batchId, partyId);
         return cashInflowTotalsMapper.toDto(cashInflowTotals);
     }
 
@@ -1610,18 +1621,57 @@ public class CashBudgetService {
         }
 
     }
+    @Transactional(readOnly = false,rollbackFor = Exception.class)
+    public void saveOrUpdateCashInflow(CashInflowMasterWrapperDTO cashInflowMasterWrapperDTO) {
+        CashInflowMaster cashInflowMaster = cashInflowMasterMapper.toEntity(cashInflowMasterWrapperDTO.getCashInflowMaster());
+        cashInflowMaster.setCompanyInfo(customUserService.getLoggedInCompanyInfo());
+        customCashInflowMasterRepository.save(cashInflowMaster);
+        cashInflowMasterWrapperDTO.setCashInflowMaster(cashInflowMasterMapper.toDto(cashInflowMaster));
+        CashInflowDataDTO cashInflowDataDTO = null;
+        LocalDate prevEventDate = null;
+            CashbudgetWrapperDTO cashbudgetWrapperDTO = cashInflowMasterWrapperDTO.getCashbudgetWrappers().get(0);
+            if (cashbudgetWrapperDTO != null && cashbudgetWrapperDTO.getCashInflowWrappers() != null) {
+                cashInflowDataDTO = cashbudgetWrapperDTO.getCashInflowWrappers().get(0).getCashInflowData();
+                prevEventDate = getPrevEventDateAndDeleteOldEntries(cashInflowDataDTO, cashbudgetWrapperDTO);
+                saveOrUpdateCashBudget(cashbudgetWrapperDTO.getCashInflowWrappers());
+            }
+        //}
+        // To do : pass the cashinflowrapperdtos according to batch id and party id
+        updateARTotals(cashbudgetWrapperDTO.getCashInflowWrappers(),prevEventDate,0L, 0L);
+    }
 
-    public void saveOrUpdateCashInflow(CashInflowMasterWrapperDTO cashInflowMasterWrapperDTO){
+    public LocalDate getPrevEventDateAndDeleteOldEntries(CashInflowDataDTO cashInflowDataDTO, CashbudgetWrapperDTO cashbudgetWrapperDTO) {
+        LocalDate prevEventDate = null;
+        if(cashInflowDataDTO != null && cashInflowDataDTO.getId() != null) {
+            log.debug("its and edit and have data"+cashInflowDataDTO);
+            CashInflowData cashInflowData = cashInflowDataMapper.toEntity(cashInflowDataDTO);
+            List<CashInflowReceivables> oldreceivables = customCashInflowReceivablesRepository.findByCid(cashInflowData);
+            for(CashInflowReceivables cashInflowReceivables1: oldreceivables){
+                if("G".equalsIgnoreCase(cashInflowReceivables1.getColorCode())){
+                    prevEventDate = cashInflowReceivables1.getSalesDate();
+                    break;
+                }
+            }
+            //delete old receivables
+            customCashInflowReceivablesRepository.deleteAll(oldreceivables);
+            //delete all ids of the new receivables so that it will insert as new records
+            List<CashInflowReceivablesDTO> cashInflowReceivablesDTOS = cashbudgetWrapperDTO.getCashInflowWrappers().get(0).getCashInflowRbls();
+            for(CashInflowReceivablesDTO cashInflowReceivablesDTO: cashInflowReceivablesDTOS){
+                cashInflowReceivablesDTO.setId(null);
+            }
+        }
+        return prevEventDate;
+    }
+
+    public void saveOrUpdateCashBudget(List<CashInflowWrapperDTO> cashInflowWrapperDTOS){
         //save cashinflow or recur entry and get the id
         //save corresponding cash inflow receivables with this id and payments
         //save cashinflow range according to the sales date and receivable date
         //then call the total update method to update the totals
         //save cashinflow master
-        CashInflowMaster cashInflowMaster = cashInflowMasterMapper.toEntity(cashInflowMasterWrapperDTO.getCashInflowMaster());
-        cashInflowMaster.setCompanyInfo(customUserService.getLoggedInCompanyInfo());
-        customCashInflowMasterRepository.save(cashInflowMaster);
-        cashInflowMasterWrapperDTO.setCashInflowMaster(cashInflowMasterMapper.toDto(cashInflowMaster));
+
         //save recur data if there is no recur id in the records
+        /*
         for (CashbudgetWrapperDTO cashbudgetWrapperDTO: cashInflowMasterWrapperDTO.getCashbudgetWrappers()) {
             if(cashbudgetWrapperDTO != null && cashbudgetWrapperDTO.getCashInflowWrappers() != null) {
                 for (CashInflowWrapperDTO cashInflowWrapperDTO : cashbudgetWrapperDTO.getCashInflowWrappers()) {
@@ -1639,35 +1689,34 @@ public class CashBudgetService {
                 }
             }
         }
+        */
         //save cashinflow data
         //save receivables data - inside loop for each cash inflow data
         String editId = null;
-        for (CashbudgetWrapperDTO cashbudgetWrapperDTO: cashInflowMasterWrapperDTO.getCashbudgetWrappers()) {
-            if(cashbudgetWrapperDTO != null && cashbudgetWrapperDTO.getCashInflowWrappers() != null) {
-                for (CashInflowWrapperDTO cashInflowWrapperDTO : cashbudgetWrapperDTO.getCashInflowWrappers()) {
-                    log.debug("salesDate::"+cashInflowWrapperDTO.getCashInflowData().getSalesDate());
-                    CashInflowData cashInflowData = cashInflowDataMapper.toEntity(cashInflowWrapperDTO.getCashInflowData());
-                    cashInflowData.setCompanyInfo(customUserService.getLoggedInCompanyInfo());
-                    customCashInflowDataRepository.save(cashInflowData);
-                    //before over writing with the saved object, retain the ids so that we can copy over again
-                    editId = cashInflowWrapperDTO.getCashInflowData().getEditId();
-                    cashInflowWrapperDTO.setCashInflowData(cashInflowDataMapper.toDto(cashInflowData));
-                    cashInflowWrapperDTO.getCashInflowData().setEditId(editId);
-                    saveCashInflowReceivables(cashbudgetWrapperDTO, cashInflowWrapperDTO, cashInflowData);
-                }
-            }
+
+        for (CashInflowWrapperDTO cashInflowWrapperDTO : cashInflowWrapperDTOS) {
+            log.debug("salesDate::"+cashInflowWrapperDTO.getCashInflowData().getSalesDate());
+            CashInflowData cashInflowData = cashInflowDataMapper.toEntity(cashInflowWrapperDTO.getCashInflowData());
+            cashInflowData.setCompanyInfo(customUserService.getLoggedInCompanyInfo());
+            customCashInflowDataRepository.save(cashInflowData);
+            //before over writing with the saved object, retain the ids so that we can copy over again
+            editId = cashInflowWrapperDTO.getCashInflowData().getEditId();
+            cashInflowWrapperDTO.setCashInflowData(cashInflowDataMapper.toDto(cashInflowData));
+            cashInflowWrapperDTO.getCashInflowData().setEditId(editId);
+            saveCashInflowReceivables(cashInflowWrapperDTO, cashInflowData);
         }
+
         //total should be called outside this loop, if its set of records, then total calculation should start from the earliest date
         //and it should happen for month by month till the current month or the last receivable date
         //saveOrUpdateARTotals(cashInflowMasterWrapperDTO);
         //for (CashbudgetWrapperDTO cashbudgetWrapperDTO: cashInflowMasterWrapperDTO.getCashbudgetWrappers()) {
             //if(cashbudgetWrapperDTO != null && cashbudgetWrapperDTO.getCashInflowWrappers() != null) {
-                updateARTotals(cashInflowMasterWrapperDTO);
+
             //}
         //}
     }
 
-    public void saveCashInflowReceivables(CashbudgetWrapperDTO cashbudgetWrapperDTO, CashInflowWrapperDTO cashInflowWrapperDTO,
+    public void saveCashInflowReceivables(CashInflowWrapperDTO cashInflowWrapperDTO,
                                                      CashInflowData cashInflowData) {
         log.debug("cashInflowWrapperDTO::"+cashInflowWrapperDTO);
         log.debug("saved cashInflowData::"+cashInflowData);
@@ -1740,6 +1789,10 @@ public class CashBudgetService {
                     if(cashInflowReceivablesDTO1.getReceivedPercent() != null &&
                         ("R".equalsIgnoreCase(cashInflowReceivablesDTO1.getColorCode()) || "W".equalsIgnoreCase(cashInflowReceivablesDTO1.getColorCode()))
                         && cashInflowReceivablesDTO1.getParId().equals(cashInflowReceivablesDTO.getEditId())){
+                        //check once again the due date and received date - if its changed to equal or less than the receivable date then make it to W
+                        if(cashInflowReceivablesDTO1.getReceivedDate() != null && (cashInflowReceivablesDTO1.getReceivedDate().compareTo(cashInflowReceivablesDTO.getReceivableDate()) < 1)){
+                            cashInflowReceivablesDTO1.setColorCode("W");
+                        }
                         singleReceived = cashInflowData.getSalesAmount() * cashInflowReceivablesDTO1.getReceivedPercent() / 100;
                         log.debug("singleReceived........"+singleReceived);
                         totalReceived = totalReceived + singleReceived;
@@ -1767,17 +1820,168 @@ public class CashBudgetService {
             cashInflowReceivablesDTO.setCidId(cashInflowData.getId());
         }
     }
-    /**
-     * check the paid amount logic to get the correct totals.
-     * also check the feasibility to get the totals and the receivables straight
-     * and do the total logic accordingly... may be a seperate method.
-     */
-    /**
-     * keep the save as its - if any edit happens - keep track that and save only those records -- if you drag and drop - open
-     * the edit screen so that they can enter the date
-     * show totals only if the user presess the button - that way if the user changes at the front end
-     * we dont have to change the total that time itself. while getting the data we can save the
-     * changed files and get the total accordingly.
-     */
 
+    /**
+     * create cashinflow for every month till the end date from start date
+     * also - create a yellow receivable record for each month
+     * create a list of cashinflows and cashreceivable records after saving recurring entry
+     * and reuse other methods to save cashinflows and cashreceiveables and totals
+     */
+    @Transactional(readOnly = false,rollbackFor = Exception.class)
+    public void saveOrUpdateRecurEntries(RecurringCBEntriesDTO recurringCBEntriesDTO) {
+        log.debug("recurringEntriesDto.."+recurringCBEntriesDTO);
+        //first save a recurring entry and get the recur id
+        RecurringCBEntries recurringCBEntries = recurringCBEntriesMapper.toEntity(recurringCBEntriesDTO);
+        customRecurringCBEntriesRepository.save(recurringCBEntries);
+        recurringCBEntriesDTO = recurringCBEntriesMapper.toDto(recurringCBEntries);
+        LocalDate startDate = recurringCBEntriesDTO.getEntryStartDate();
+        LocalDate endDate = recurringCBEntriesDTO.getEntryEndDate();
+        String increment = recurringCBEntriesDTO.getIncrement();
+        String frequency = recurringCBEntriesDTO.getFrequency();
+        List<CashInflowWrapperDTO> cashInflowWrapperDTOS = new ArrayList<CashInflowWrapperDTO>();
+        LocalDate eventDate = startDate;
+        while(endDate.compareTo(eventDate) >= 0) {
+            if ("Last".equalsIgnoreCase(increment)){
+                eventDate = CustomUtil.getLastDayOfMonth(eventDate);
+            }
+            else {
+                eventDate = eventDate.withDayOfMonth(Integer.parseInt(increment));
+            }
+            log.debug("eventDate::"+eventDate);
+            CashInflowWrapperDTO cashInflowWrapperDTO = new CashInflowWrapperDTO();
+            CashInflowDataDTO cashInflowDataDTO = new CashInflowDataDTO();
+            cashInflowDataDTO.setSalesDate(eventDate);
+            cashInflowDataDTO.setReceivableName(recurringCBEntriesDTO.getEntryName());
+            cashInflowDataDTO.setSalesAmount(recurringCBEntriesDTO.getEntryAmount());
+            cashInflowDataDTO.setCompanyInfoId(customUserService.getLoggedInCompanyInfo().getId());
+            cashInflowDataDTO.setEditId("C"+CustomUtil.getUniqueString());
+            cashInflowDataDTO.setRecurId(recurringCBEntriesDTO.getId());
+            cashInflowDataDTO.setPartyId(recurringCBEntriesDTO.getPartyId());
+            cashInflowDataDTO.setCbBatchId(recurringCBEntriesDTO.getBatchId());
+            cashInflowDataDTO.setCbType(recurringCBEntriesDTO.getCbType());
+            cashInflowDataDTO.setInflowType("R");
+            cashInflowWrapperDTO.setCashInflowData(cashInflowDataDTO);
+            List<CashInflowReceivablesDTO> cashInflowReceivablesDTOS = new ArrayList<CashInflowReceivablesDTO>();
+            CashInflowReceivablesDTO cashInflowReceivablesDTO = new CashInflowReceivablesDTO();
+            cashInflowReceivablesDTO.setReceivableDate(eventDate);
+            cashInflowReceivablesDTO.setSalesDate(eventDate);
+            cashInflowReceivablesDTO.setReceivableAmt(cashInflowDataDTO.getSalesAmount());
+            cashInflowReceivablesDTO.setColorCode("G");
+            cashInflowReceivablesDTO.setEditId("G"+CustomUtil.getUniqueString());
+            cashInflowReceivablesDTOS.add(cashInflowReceivablesDTO);
+            CashInflowReceivablesDTO cashInflowReceivablesDTO1 = new CashInflowReceivablesDTO();
+            cashInflowReceivablesDTO1.setReceivableDate(eventDate);
+            cashInflowReceivablesDTO1.setSalesDate(eventDate);
+            cashInflowReceivablesDTO1.setReceivableAmt(cashInflowDataDTO.getSalesAmount());
+            //for recurr it will be 100% for the first time, elese user can go and change in UI
+            cashInflowReceivablesDTO1.setReceivablePercent(100.0);
+            cashInflowReceivablesDTO1.setCreditPeriod("0");
+            cashInflowReceivablesDTO1.setColorCode("Y");
+            cashInflowReceivablesDTO1.setEditId("Y"+CustomUtil.getUniqueString());
+            cashInflowReceivablesDTOS.add(cashInflowReceivablesDTO1);
+            cashInflowWrapperDTO.setCashInflowRbls(cashInflowReceivablesDTOS);
+            cashInflowWrapperDTOS.add(cashInflowWrapperDTO);
+            CashInflowReceivablesDTO cashInflowReceivablesDTO2 = new CashInflowReceivablesDTO();
+            //cashInflowReceivablesDTO2.setReceivableDate(eventDate);
+            //cashInflowReceivablesDTO2.setSalesDate(eventDate);
+            //cashInflowReceivablesDTO2.setReceivableAmt(cashInflowDataDTO.getSalesAmount());
+            //for recurr it will be 100% for the first time, elese user can go and change in UI
+            //cashInflowReceivablesDTO1.setReceivablePercent(100.0);
+            //cashInflowReceivablesDTO1.setCreditPeriod("0");
+            cashInflowReceivablesDTO2.setColorCode("W");
+            cashInflowReceivablesDTO2.setEditId("WR"+CustomUtil.getUniqueString());
+            //parent id will be edit id of yellow
+            cashInflowReceivablesDTO2.setParId(cashInflowReceivablesDTO1.getEditId());
+            cashInflowReceivablesDTOS.add(cashInflowReceivablesDTO2);
+            cashInflowWrapperDTO.setCashInflowRbls(cashInflowReceivablesDTOS);
+            cashInflowWrapperDTOS.add(cashInflowWrapperDTO);
+            // create cashinflow and receivables just like other cashinflow from the ui
+            // and form a list of cashinflow with receivables
+            // write a new method to save this list and call the totals with start and
+            // end date - this method can be used for upload functionality too
+            eventDate = eventDate.plusMonths(1);
+        }
+        log.debug("cashinflowwrapperdtos.."+cashInflowWrapperDTOS);
+        saveOrUpdateCashBudget(cashInflowWrapperDTOS);
+        // To do : pass the cashinflowrapperdtos according to batch id and party id
+        updateARTotals(cashInflowWrapperDTOS, null,0L, 0L);
+    }
+    @Transactional(readOnly = false,rollbackFor = Exception.class)
+    public void deleteRecurData(Long id) {
+        List<CashInflowData> cashInflowDataList = customCashInflowDataRepository.findByRecurIdAndCompanyInfo(id, customUserService.getLoggedInCompanyInfo());
+        log.debug("cif list for delete.."+cashInflowDataList);
+        List<CashInflowWrapperDTO> cashInflowWrapperDTOS = new ArrayList<CashInflowWrapperDTO>();
+        if(cashInflowDataList != null && cashInflowDataList.size() > 0){
+            for(CashInflowData cashInflowData: cashInflowDataList){
+                CashInflowWrapperDTO cashInflowWrapperDTO = new CashInflowWrapperDTO();
+                CashInflowDataDTO cashInflowDataDTO = cashInflowDataMapper.toDto(cashInflowData);
+                List<CashInflowReceivables> cashInflowReceivables = customCashInflowReceivablesRepository.findByCid(cashInflowData);
+                if(cashInflowReceivables != null) {
+                    cashInflowWrapperDTO.setCashInflowRbls(cashInflowReceivablesMapper.toDto(cashInflowReceivables));
+                }
+                cashInflowWrapperDTO.setCashInflowData(cashInflowDataDTO);
+                cashInflowWrapperDTOS.add(cashInflowWrapperDTO);
+                deleteCifData(cashInflowData);
+            }
+        }
+        customRecurringCBEntriesRepository.deleteById(id);
+        if(cashInflowWrapperDTOS.size() > 0){
+            // To do : pass the cashinflowrapperdtos according to batch id and party id
+            //pass the second arg as null as these are not single edits
+            updateARTotals(cashInflowWrapperDTOS, null, 0L, 0L);
+        }
+    }
+
+    /**
+     *
+     * Create a batch or category
+     * Each cashinflow create will go into one batch
+     * In the UI over all batch wise, they can expand and see each batch
+     * how do we store totals??
+     * one option is to introduce party id, batch id, total id in the totals
+     * put company id in total id column to get all receivables for that company
+     * there will be seperate total records for each party id, batch id, and total id (company id)
+     * user would be able to fetch records based on party id, batch id, total id or party id and batch id or batch id and total id
+     * dynamic fields in cash inflow or cashinflow payment records - how do we use it?
+     * for return or cancel, we can create another color field and denotes that its cancel or return in the payment
+     * screen.
+     */
+    public void saveBatchAndParties() {
+
+    }
+
+    public List<CashBudgetBatchDTO> getCashBatches(){
+        List<CashBudgetBatch> cashBudgetBatches = cashBatchRepository.findByCompanyInfo(customUserService.getLoggedInCompanyInfo());
+        return cashBudgetBatchMapper.toDto(cashBudgetBatches);
+    }
+
+    @Transactional(readOnly = false,rollbackFor = Exception.class)
+    public void saveOrUpdateCashBatch(CashBudgetBatchDTO cashBudgetBatchDTO) {
+        CashBudgetBatch cashBudgetBatch = cashBudgetBatchMapper.toEntity(cashBudgetBatchDTO);
+        cashBudgetBatch.setCompanyInfo(customUserService.getLoggedInCompanyInfo());
+        cashBatchRepository.save(cashBudgetBatch);
+    }
+
+    public List<CashBudgetPartyDTO> getCashParties() {
+        List<CashBudgetParty> cashBudgetParties = cashPartyRepository.findByCompanyInfo(customUserService.getLoggedInCompanyInfo());
+        return cashBudgetPartyMapper.toDto(cashBudgetParties);
+    }
+
+    @Transactional(readOnly = false,rollbackFor = Exception.class)
+    public void saveOrUpdateCashParty(List<CashBudgetPartyDTO> cashBudgetPartyDTOS) {
+        List<CashBudgetParty> cashBudgetParties = cashBudgetPartyMapper.toEntity(cashBudgetPartyDTOS);
+        for(CashBudgetParty cashBudgetParty:cashBudgetParties){
+            cashBudgetParty.setCompanyInfo(customUserService.getLoggedInCompanyInfo());
+        }
+        cashPartyRepository.saveAll(cashBudgetParties);
+    }
+
+    // To do
+    /**
+     * move delete button to the popup as there is no need of edit button now
+     * click on the item shows the edit screen
+     * also add collapse according to batch in home page
+     * totals - yet to finalize the logic to store batch / party wise in totals tables
+     *
+     */
 }
