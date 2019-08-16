@@ -943,7 +943,143 @@ constructor(
     }
 }
 
+SXSSFWorkbook workbook = new SXSSFWorkbook(100);
+    private void writeIntoExcel1(CbReportWrapper cbReportWrapper, Workbook workbook, FileOutputStream streamOut) throws IOException {
+        Sheet sheet = workbook.createSheet();
+        sheet.setColumnWidth(0,2000);
+        sheet.setColumnWidth(1,2000);
+        sheet.setColumnWidth(2,2000);
+        sheet.setColumnWidth(3,2000);
+        sheet.setColumnWidth(4,2000);
+        sheet.setColumnWidth(5,2000);
+        sheet.setColumnWidth(6,2000);
+        sheet.setColumnWidth(7,2000);
+        sheet.setColumnWidth(8,2000);
+        int startRowIndex = 0;
+        int startColumnIndex = 0;
+        Row row = sheet.createRow(startRowIndex);
+        startRowIndex++;
+        Cell cell = row.createCell(startColumnIndex);
+        startColumnIndex++;
+        cell.setCellValue("Batch Name : "+cbReportWrapper.getCashBudgetBatch().getName());
+        cell = row.createCell(startColumnIndex);
+        startColumnIndex++;
+        cell.setCellValue("From : "+cbReportWrapper.getDayDtos().get(0).getEventDate());
+        cell = row.createCell(startColumnIndex);
+        startColumnIndex++;
+        cell.setCellValue("To : "+cbReportWrapper.getDayDtos().get(cbReportWrapper.getDayDtos().size() - 1).getEventDate());
+        createEmptyLine(sheet, startRowIndex, getCellStyle(workbook,"noborder",false,"left"), 8);
+        startRowIndex++;
+        startColumnIndex = 0;
+        row = sheet.createRow(startRowIndex);
+        startRowIndex++;
+        CellStyle colorStyle = getCellStyle(workbook,"noborder",false,"left");
+        colorStyle.setFillForegroundColor(IndexedColors.RED.getIndex());
+        colorStyle.setFillPattern(CellStyle.SOLID_FOREGROUND);
+        createCellAndSetValue(row,startColumnIndex," Date", colorStyle, SXSSFCell.CELL_TYPE_STRING);
+        startColumnIndex++;
+        int startCol = 0;
+        int endCol = 0;
+        for(DayDTO dayDTO: cbReportWrapper.getDayDtos()) {
+            startCol = startColumnIndex;
+            createCellAndSetValue(row,startColumnIndex,dayDTO.getEventDate()+"", getNoStyleCell(workbook), SXSSFCell.CELL_TYPE_STRING);
+            startColumnIndex++;
+            row.createCell(startColumnIndex);
+            startColumnIndex++;
+            row.createCell(startColumnIndex);
+            endCol = startColumnIndex;
+            startColumnIndex++;
+            setMerge(sheet,startRowIndex - 1, startRowIndex - 1,startCol,endCol);
+        }
+        workbook.write(streamOut);
+    }
 
+    private void createEmptyLine(Sheet worksheet, int startRowIndex, CellStyle cellStyle, Integer columnCount) {
+        Row row;
+        int startColumnIndex;
+        row = worksheet.createRow(startRowIndex);
+        startColumnIndex = 0;
+        for (int j = 1; j < columnCount; j++) {
+            createCellAndSetValue(row,startColumnIndex,"",cellStyle,SXSSFCell.CELL_TYPE_STRING);
+            startColumnIndex = startColumnIndex + 1;
+        }
+    }
+
+    private void createCellAndSetValue(Row row, int startColumnIndex, String data, CellStyle cellStyle, Integer cellType) {
+        Cell cell = row.createCell(startColumnIndex);
+        cell.setCellValue(data);
+        cell.setCellType(cellType);
+        cellStyle.setWrapText(true);
+        cell.setCellStyle(cellStyle);
+    }
+
+    public CellStyle getNoStyleCell(Workbook workbook) {
+        return workbook.createCellStyle();
+    }
+
+    public CellStyle getCellStyle(Workbook workbook,
+                                      String borderSide,
+                                      boolean boldflag,
+                                      String align) {
+        // 4.To create header style
+        CellStyle headerCellStyle = workbook.createCellStyle();
+       // headerCellStyle.setFillBackgroundColor(IndexedColors.RED.getIndex());
+        // 5.To create font style
+        Font boldFont = workbook.createFont();
+        boldFont.setFontName("Calibri");
+        boldFont.setFontHeightInPoints((short) 11);
+        //boldFont.setColor(HSSFColor.WHITE.index);
+        if(boldflag) {
+            boldFont.setBoldweight(Short.parseShort("1"));
+        }
+        if(StringUtils.isNotEmpty(borderSide)) {
+            if("all".equalsIgnoreCase(borderSide)) {
+                headerCellStyle.setBorderBottom(CellStyle.BORDER_THIN);
+                headerCellStyle.setBorderTop(CellStyle.BORDER_THIN);
+                headerCellStyle.setBorderRight(CellStyle.BORDER_THIN);
+                headerCellStyle.setBorderLeft(CellStyle.BORDER_THIN);
+            }
+            else if("left".equalsIgnoreCase(borderSide)) {
+                headerCellStyle.setBorderLeft(CellStyle.BORDER_THIN);
+            }
+            else if("right".equalsIgnoreCase(borderSide)) {
+                headerCellStyle.setBorderRight(CellStyle.BORDER_THIN);
+            }
+            else if("top".equalsIgnoreCase(borderSide)) {
+                headerCellStyle.setBorderTop(CellStyle.BORDER_THIN);
+            }
+            else if("bottom".equalsIgnoreCase(borderSide)) {
+                headerCellStyle.setBorderLeft(CellStyle.BORDER_NONE);
+                headerCellStyle.setBorderRight(CellStyle.BORDER_NONE);
+                headerCellStyle.setBorderTop(CellStyle.BORDER_NONE);
+                headerCellStyle.setBorderBottom(CellStyle.BORDER_THIN);
+            }
+            else if("noborder".equalsIgnoreCase(borderSide)) {
+                headerCellStyle.setBorderLeft(CellStyle.BORDER_NONE);
+                headerCellStyle.setBorderRight(CellStyle.BORDER_NONE);
+                headerCellStyle.setBorderTop(CellStyle.BORDER_NONE);
+                headerCellStyle.setBorderBottom(CellStyle.BORDER_NONE);
+            }
+        }
+        headerCellStyle.setFont(boldFont);
+        if(StringUtils.isNotEmpty(align)) {
+            if ("center".equalsIgnoreCase(align)) {
+                headerCellStyle.setAlignment(CellStyle.ALIGN_CENTER);
+            }
+            else if("left".equalsIgnoreCase(align)) {
+                headerCellStyle.setAlignment(CellStyle.ALIGN_LEFT);
+            }
+            else if("right".equalsIgnoreCase(align)) {
+                headerCellStyle.setAlignment(CellStyle.ALIGN_RIGHT);
+            }
+        }
+        return headerCellStyle;
+    }
+
+    public void setMerge(Sheet sheet, int startRow, int endRow, int startCol, int endCol) {
+        CellRangeAddress cellMerge = new CellRangeAddress(startRow, endRow, startCol, endCol);
+        sheet.addMergedRegion(cellMerge);
+    }
 
 
 
